@@ -1,0 +1,25 @@
+{
+  "name": "@template/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
+    "deploy": "vp exec wrangler deploy --config wrangler.jsonc",
+    "deploy:dry-run": "vp exec wrangler deploy --config wrangler.jsonc --dry-run",
+    "dev": "vp exec wrangler dev --config wrangler.dev.jsonc --port 8787",
+    "test": "vp test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orpc/server": "catalog:",
+    "@template/contract": "workspace:*",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:",
+    "wrangler": "catalog:"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@template/website",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp exec vue-tsc --noEmit -p tsconfig.json && vp build",
+    "preview": "vp preview",
+    "typecheck": "vp exec vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@orpc/client": "catalog:",
+    "@template/contract": "workspace:*",
+    "element-plus": "^2.13.7",
+    "pinia": "catalog:",
+    "vue": "^3.5.32",
+    "vue-router": "catalog:"
+  },
+  "devDependencies": {
+    "@orpc/contract": "catalog:",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "typescript": "catalog:",
+    "unplugin-auto-import": "^21.0.0",
+    "unplugin-vue-components": "^32.0.0",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vue-tsc": "^3.2.6"
+  }
+}

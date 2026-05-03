@@ -1,0 +1,32 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+
+catalog:
+  "@cloudflare/workers-types": ^4
+  "@orpc/client": ^1
+  "@orpc/contract": ^1
+  "@orpc/server": ^1
+  "@types/node": ^24
+  hono: ^4
+  pinia: ^3.0.4
+  typescript: ^5.9.3
+  vite: npm:@voidzero-dev/vite-plus-core@latest
+  vite-plus: ^0.1.20
+  vitest: npm:@voidzero-dev/vite-plus-test@latest
+  vue-router: ^5.0.4
+  wrangler: ^4
+  zod: ^4
+
+catalogMode: prefer
+overrides:
+  vite: "catalog:"
+  vitest: "catalog:"
+peerDependencyRules:
+  allowAny:
+    - vite
+    - vitest
+  allowedVersions:
+    vite: "*"
+    vitest: "*"
