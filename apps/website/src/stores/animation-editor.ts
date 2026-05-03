@@ -17,7 +17,7 @@ import {
 import { exportVrmaToText, importVrmaFromText } from "../domain/vrma/io";
 import { eulerDegreesToQuaternion, quaternionToEulerDegrees } from "../domain/vrma/rotation";
 import { sampleDocument } from "../domain/vrma/sampling";
-import type { HumanBoneName, Interpolation, Vec3, VrmaTrack } from "../domain/vrma/types";
+import type { HumanBoneName, Interpolation, Vec3, Vec4, VrmaTrack } from "../domain/vrma/types";
 import { validateDocument } from "../domain/vrma/validation";
 
 function normalizeTime(value: number) {
@@ -197,10 +197,38 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
     selectedKeyframeIndex.value = 0;
   }
 
+  function ensureActiveBone(bone: HumanBoneName) {
+    if (document.value.activeBones.includes(bone)) {
+      return;
+    }
+
+    document.value = {
+      ...document.value,
+      activeBones: [...document.value.activeBones, bone],
+    };
+  }
+
   function addBoneRotationTrack(bone: HumanBoneName) {
+    ensureActiveBone(bone);
+
     if (
       document.value.tracks.some((track) => track.kind === "boneRotation" && track.bone === bone)
     ) {
+      return;
+    }
+
+    addTrack(createRotationTrack(bone));
+  }
+
+  function selectOrCreateBoneRotationTrack(bone: HumanBoneName) {
+    ensureActiveBone(bone);
+
+    const existingTrack = document.value.tracks.find(
+      (track) => track.kind === "boneRotation" && track.bone === bone,
+    );
+
+    if (existingTrack) {
+      selectTrack(existingTrack.id);
       return;
     }
 
@@ -373,6 +401,33 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
     document.value = upsertTrack(document.value, { ...track });
   }
 
+  function setBoneRotationAtCurrentTime(bone: HumanBoneName, rotation: Vec4) {
+    selectOrCreateBoneRotationTrack(bone);
+    const track = selectedTrack.value;
+
+    if (track?.kind !== "boneRotation" || track.bone !== bone) {
+      return;
+    }
+
+    const time = Number(currentTime.value.toFixed(3));
+    const existingIndex = track.keyframes.findIndex(
+      (keyframe) => Math.abs(keyframe.time - time) < 1 / 300,
+    );
+
+    if (existingIndex >= 0) {
+      track.keyframes[existingIndex]!.value = [...rotation];
+      document.value = upsertTrack(document.value, { ...track });
+      selectedKeyframeIndex.value = existingIndex;
+      return;
+    }
+
+    track.keyframes.push({ time, value: [...rotation] });
+    document.value = upsertTrack(document.value, { ...track });
+    const nextTrack = selectedTrack.value;
+    selectedKeyframeIndex.value =
+      nextTrack?.keyframes.findIndex((keyframe) => keyframe.time === time) ?? 0;
+  }
+
   function updateDurationValue(value: number) {
     document.value = {
       ...document.value,
@@ -424,11 +479,13 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
     removeTrack,
     sampledPose,
     selectTrack,
+    selectOrCreateBoneRotationTrack,
     selectedKeyframe,
     selectedKeyframeIndex,
     selectedTrack,
     selectedTrackId,
     setCurrentTime,
+    setBoneRotationAtCurrentTime,
     stopPlayback,
     togglePlayback,
     updateDurationValue,

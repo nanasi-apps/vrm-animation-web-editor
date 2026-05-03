@@ -1,16 +1,21 @@
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import {
   AmbientLight,
   Clock,
   DirectionalLight,
   Group,
+  Mesh,
   Object3D,
   PerspectiveCamera,
   Quaternion,
+  Raycaster,
   Scene,
   SRGBColorSpace,
+  SkinnedMesh,
   Vector3,
+  Vector2,
   WebGLRenderer,
 } from "three";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
@@ -28,7 +33,18 @@ export interface VrmPreviewController {
   loadFile: (file: File) => Promise<void>;
 }
 
+interface VrmPreviewControllerOptions {
+  onBoneRotationChange?: (bone: HumanBoneName, rotation: [number, number, number, number]) => void;
+  onBoneSelect?: (bone: HumanBoneName) => void;
+  onSummary?: (summary: VrmPreviewSummary) => void;
+}
+
+interface SkinAttributeLike {
+  getComponent: (index: number, component: number) => number;
+}
+
 const LOOK_AT_DISTANCE = 2;
+const MIN_BONE_PICK_WEIGHT = 0.15;
 
 export function buildPreviewSkeleton() {
   return { joints: [], lines: [] };
@@ -36,7 +52,7 @@ export function buildPreviewSkeleton() {
 
 export function createVrmPreviewController(
   canvas: HTMLCanvasElement,
-  onSummary?: (summary: VrmPreviewSummary) => void,
+  options: VrmPreviewControllerOptions = {},
 ): VrmPreviewController {
   const scene = new Scene();
   const camera = new PerspectiveCamera(30, 1, 0.1, 50);
@@ -57,6 +73,13 @@ export function createVrmPreviewController(
 
   const loader = new GLTFLoader();
   loader.register((parser) => new VRMLoaderPlugin(parser));
+  const raycaster = new Raycaster();
+  const pointer = new Vector2();
+  const transformControls = new TransformControls(camera, canvas);
+  transformControls.setMode("rotate");
+  transformControls.space = "local";
+  transformControls.setSize(1.15);
+  scene.add(transformControls.getHelper());
 
   const clock = new Clock();
   const lookAtTarget = new Object3D();
@@ -64,7 +87,29 @@ export function createVrmPreviewController(
 
   let currentVrm: VRM | null = null;
   let container: Group | null = null;
+  let selectedBone: HumanBoneName | null = null;
   let disposed = false;
+  let isTransformDragging = false;
+
+  transformControls.addEventListener("dragging-changed", (event) => {
+    isTransformDragging = Boolean(event.value);
+    controls.enabled = !isTransformDragging;
+  });
+
+  transformControls.addEventListener("objectChange", () => {
+    const target = transformControls.object;
+
+    if (!selectedBone || !target) {
+      return;
+    }
+
+    options.onBoneRotationChange?.(selectedBone, [
+      target.quaternion.x,
+      target.quaternion.y,
+      target.quaternion.z,
+      target.quaternion.w,
+    ]);
+  });
 
   function resize() {
     const { clientHeight, clientWidth } = canvas;
@@ -97,6 +142,7 @@ export function createVrmPreviewController(
   }
 
   function clearCurrentModel() {
+    transformControls.detach();
     if (container) {
       scene.remove(container);
       container.traverse((object) => {
@@ -106,7 +152,150 @@ export function createVrmPreviewController(
 
     currentVrm = null;
     container = null;
+    selectedBone = null;
   }
+
+  function createBoneNodeMap(vrm: VRM) {
+    const boneNodeMap = new Map<string, HumanBoneName>();
+    const humanoidWithRawBones = vrm.humanoid as VRM["humanoid"] & {
+      getRawBoneNode?: (name: HumanBoneName) => Object3D | null;
+    };
+
+    for (const key of Object.keys(vrm.humanoid.humanBones) as HumanBoneName[]) {
+      const normalizedNode = vrm.humanoid.getNormalizedBoneNode(key);
+      const rawNode = humanoidWithRawBones.getRawBoneNode?.(key);
+
+      if (normalizedNode) {
+        boneNodeMap.set(normalizedNode.uuid, key);
+        boneNodeMap.set(normalizedNode.name, key);
+      }
+
+      if (rawNode) {
+        boneNodeMap.set(rawNode.uuid, key);
+        boneNodeMap.set(rawNode.name, key);
+      }
+    }
+
+    return boneNodeMap;
+  }
+
+  function findSkinnedMesh(object: Object3D): SkinnedMesh | null {
+    let current: Object3D | null = object;
+
+    while (current) {
+      if (current instanceof SkinnedMesh) {
+        return current;
+      }
+
+      current = current.parent;
+    }
+
+    return null;
+  }
+
+  function pickWeightedBone(mesh: SkinnedMesh, vertices: [number, number, number]) {
+    const skinIndex = mesh.geometry.getAttribute("skinIndex");
+    const skinWeight = mesh.geometry.getAttribute("skinWeight");
+
+    if (!isSkinAttributeLike(skinIndex) || !isSkinAttributeLike(skinWeight)) {
+      return null;
+    }
+
+    const weights = new Map<number, number>();
+
+    for (const vertex of vertices) {
+      for (let weightOffset = 0; weightOffset < 4; weightOffset += 1) {
+        const boneIndex = skinIndex.getComponent(vertex, weightOffset);
+        const weight = skinWeight.getComponent(vertex, weightOffset);
+        weights.set(boneIndex, (weights.get(boneIndex) ?? 0) + weight);
+      }
+    }
+
+    const [boneIndex, weight] =
+      [...weights.entries()].sort((left, right) => right[1] - left[1])[0] ?? [];
+
+    if (boneIndex === undefined || weight === undefined || weight < MIN_BONE_PICK_WEIGHT) {
+      return null;
+    }
+
+    return mesh.skeleton.bones[boneIndex] ?? null;
+  }
+
+  function isSkinAttributeLike(attribute: unknown): attribute is SkinAttributeLike {
+    return (
+      typeof attribute === "object" &&
+      attribute !== null &&
+      "getComponent" in attribute &&
+      typeof attribute.getComponent === "function"
+    );
+  }
+
+  function selectBone(boneName: HumanBoneName) {
+    if (!currentVrm) {
+      return;
+    }
+
+    const node = currentVrm.humanoid.getNormalizedBoneNode(boneName);
+
+    if (!node) {
+      return;
+    }
+
+    selectedBone = boneName;
+    transformControls.attach(node);
+    options.onBoneSelect?.(boneName);
+  }
+
+  function deselectBone() {
+    selectedBone = null;
+    transformControls.detach();
+  }
+
+  function handlePointerDown(event: PointerEvent) {
+    if (!currentVrm || isTransformDragging || event.button !== 0) {
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
+    raycaster.setFromCamera(pointer, camera);
+
+    const intersections = raycaster.intersectObject(currentVrm.scene, true);
+
+    if (intersections.length === 0) {
+      deselectBone();
+      return;
+    }
+
+    const boneNodeMap = createBoneNodeMap(currentVrm);
+
+    for (const intersection of intersections) {
+      const mesh =
+        intersection.object instanceof Mesh ? findSkinnedMesh(intersection.object) : null;
+      const face = intersection.face;
+
+      if (!mesh || !face) {
+        continue;
+      }
+
+      const bone = pickWeightedBone(mesh, [face.a, face.b, face.c]);
+      const boneName = bone
+        ? (boneNodeMap.get(bone.uuid) ?? boneNodeMap.get(bone.name))
+        : undefined;
+
+      if (boneName) {
+        selectBone(boneName);
+        return;
+      }
+
+      continue;
+    }
+
+    deselectBone();
+  }
+
+  canvas.addEventListener("pointerdown", handlePointerDown);
 
   async function loadFile(file: File) {
     const url = URL.createObjectURL(file);
@@ -140,7 +329,7 @@ export function createVrmPreviewController(
         return vrm.humanoid.getNormalizedBoneNode(key as HumanBoneName) != null;
       }) as HumanBoneName[];
 
-      onSummary?.({
+      options.onSummary?.({
         expressionNames,
         humanBones,
         modelName: file.name,
@@ -213,6 +402,8 @@ export function createVrmPreviewController(
     dispose() {
       disposed = true;
       controls.dispose();
+      transformControls.dispose();
+      canvas.removeEventListener("pointerdown", handlePointerDown);
       renderer.dispose();
       clearCurrentModel();
     },

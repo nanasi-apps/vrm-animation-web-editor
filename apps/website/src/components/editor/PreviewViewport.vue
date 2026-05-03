@@ -14,7 +14,14 @@ onMounted(() => {
     return;
   }
 
-  controller = createVrmPreviewController(canvasRef.value);
+  controller = createVrmPreviewController(canvasRef.value, {
+    onBoneRotationChange: (bone, rotation) => {
+      editorStore.setBoneRotationAtCurrentTime(bone, rotation);
+    },
+    onBoneSelect: (bone) => {
+      editorStore.selectOrCreateBoneRotationTrack(bone);
+    },
+  });
 });
 
 onBeforeUnmount(() => {
