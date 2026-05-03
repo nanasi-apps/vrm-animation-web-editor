@@ -1,190 +1,89 @@
 <script setup lang="ts">
-import { createORPCClient } from "@orpc/client";
-import { RPCLink } from "@orpc/client/fetch";
-import type { ContractRouterClient } from "@orpc/contract";
-import { contract, type HealthStatus, type User } from "@template/contract";
-import { ref } from "vue";
-
-const link = new RPCLink({
-  url: () => new URL("/rpc", window.location.origin).toString(),
-});
-
-const rpc: ContractRouterClient<typeof contract> = createORPCClient(link);
-
-const health = ref<HealthStatus | null>(null);
-const users = ref<User[]>([]);
-const errorMessage = ref("");
-const isLoading = ref(false);
-
-const templateEntries = [
-  { label: "website", path: "apps/website" },
-  { label: "backend", path: "apps/backend" },
-  { label: "contract", path: "packages/contract/user.ts" },
-  { label: "contract", path: "packages/contract/system.ts" },
-];
-
-const healthText = () => JSON.stringify(health.value, null, 2);
-const usersText = () => JSON.stringify(users.value, null, 2);
-
-void refresh();
-
-async function refresh() {
-  isLoading.value = true;
-  errorMessage.value = "";
-
-  try {
-    const [nextHealth, nextUsers] = await Promise.all([fetchHealth(), rpc.user.list({})]);
-
-    health.value = nextHealth;
-    users.value = nextUsers;
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error);
-  } finally {
-    isLoading.value = false;
-  }
-}
-
-async function fetchHealth(): Promise<HealthStatus> {
-  const response = await fetch("/api/health");
-
-  if (!response.ok) {
-    throw new Error(`Health request failed with ${response.status}`);
-  }
-
-  return (await response.json()) as HealthStatus;
-}
+import FileImportPanel from "../components/editor/FileImportPanel.vue";
+import KeyframeInspector from "../components/editor/KeyframeInspector.vue";
+import PreviewViewport from "../components/editor/PreviewViewport.vue";
+import TimelinePanel from "../components/editor/TimelinePanel.vue";
 </script>
 
 <template>
-  <el-space direction="vertical" :size="24" fill class="stack">
-    <el-card shadow="hover" class="hero-card">
-      <div class="eyebrow-row">
-        <el-tag type="primary" effect="dark" round>Vue + Element Plus + Vue Router</el-tag>
-        <el-tag type="info" round>Vite+ / Hono / Cloudflare Workers / oRPC</el-tag>
-      </div>
+  <section class="unsupported-device">
+    <strong>Unsupported device</strong>
+    <span>このエディターは横幅 1350px 以上の画面で使用してください。</span>
+  </section>
 
-      <h1>Full-stack template wired for local DX and Workers deploys.</h1>
+  <main class="mmd-workbench">
+    <aside class="tool-rail left-rail">
+      <FileImportPanel />
+    </aside>
 
-      <p class="lede">
-        The frontend proxies `/api` and `/rpc` to the Hono backend in development, and the same
-        Worker serves the built frontend through Workers Assets in production.
-      </p>
+    <section class="stage-column">
+      <PreviewViewport />
+      <TimelinePanel />
+    </section>
 
-      <div class="hero-actions">
-        <el-button type="primary" size="large" :loading="isLoading" @click="refresh">
-          Refresh sample data
-        </el-button>
-        <span class="hint"
-          >Edit <code>apps/website/src/views/HomeView.vue</code> to verify HMR.</span
-        >
-      </div>
-    </el-card>
-
-    <el-alert
-      v-if="errorMessage"
-      title="Request failed"
-      type="error"
-      :description="errorMessage"
-      show-icon
-      :closable="false"
-    />
-
-    <el-row :gutter="24">
-      <el-col :xs="24" :md="12">
-        <el-card shadow="hover" class="panel-card">
-          <template #header>
-            <div class="card-header">
-              <span>REST health</span>
-              <el-tag type="success" round>GET /api/health</el-tag>
-            </div>
-          </template>
-          <pre>{{ health ? healthText() : "Loading..." }}</pre>
-        </el-card>
-      </el-col>
-
-      <el-col :xs="24" :md="12">
-        <el-card shadow="hover" class="panel-card">
-          <template #header>
-            <div class="card-header">
-              <span>oRPC users</span>
-              <el-tag type="warning" round>rpc.user.list</el-tag>
-            </div>
-          </template>
-          <pre>{{ users.length ? usersText() : "Loading..." }}</pre>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-card shadow="hover" class="panel-card">
-      <template #header>
-        <div class="card-header">
-          <span>Template structure</span>
-          <el-tag type="info" round>Monorepo baseline</el-tag>
-        </div>
-      </template>
-
-      <el-descriptions :column="1" border>
-        <el-descriptions-item
-          v-for="entry in templateEntries"
-          :key="entry.path"
-          :label="entry.label"
-        >
-          <code>{{ entry.path }}</code>
-        </el-descriptions-item>
-      </el-descriptions>
-    </el-card>
-  </el-space>
+    <aside class="tool-rail right-rail">
+      <KeyframeInspector />
+    </aside>
+  </main>
 </template>
 
 <style scoped>
-.stack {
+.mmd-workbench {
+  align-items: stretch;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 270px minmax(520px, 1fr) 330px;
+  height: calc(100vh - 16px);
+  overflow: hidden;
   width: 100%;
 }
 
-.hero-card,
-.panel-card {
-  border-radius: 24px;
+.unsupported-device {
+  align-items: center;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: 18px;
+  display: none;
+  gap: 8px;
+  justify-items: center;
+  margin: 24px auto;
+  max-width: 520px;
+  padding: 28px;
+  text-align: center;
 }
 
-.eyebrow-row {
-  display: flex;
-  flex-wrap: wrap;
+.unsupported-device strong {
+  font-size: 1.2rem;
+}
+
+.unsupported-device span {
+  color: var(--el-text-color-secondary);
+}
+
+.tool-rail,
+.stage-column {
+  display: grid;
   gap: 12px;
 }
 
-h1 {
-  font-size: clamp(2.2rem, 6vw, 4.4rem);
-  letter-spacing: -0.05em;
-  line-height: 0.96;
-  margin: 20px 0 0;
-  max-width: 11ch;
+.left-rail,
+.right-rail {
+  align-content: start;
 }
 
-.lede {
-  font-size: 1.04rem;
-  margin: 16px 0 0;
-  max-width: 62ch;
+.stage-column {
+  grid-template-rows: 480px minmax(0, 1fr);
+  min-width: 0;
+  overflow: hidden;
 }
 
-.hero-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-top: 24px;
-}
+@media (max-width: 1349px) {
+  .mmd-workbench {
+    display: none;
+  }
 
-.card-header {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-pre {
-  border-radius: 16px;
-  margin: 0;
-  overflow: auto;
-  padding: 16px;
+  .unsupported-device {
+    display: grid;
+  }
 }
 </style>

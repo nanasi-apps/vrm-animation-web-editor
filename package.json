@@ -13,7 +13,7 @@
     "lint": "vp lint",
     "prepare": "vp config",
     "ready": "vp run format && vp run lint && vp run typecheck && vp run test && vp run build",
-    "test": "vp run @template/backend#test",
+    "test": "vp run @template/backend#test && vp run @template/website#test",
     "typecheck": "vp run @template/contract#typecheck && vp run @template/backend#typecheck && vp run @template/website#typecheck"
   },
   "devDependencies": {

@@ -1,0 +1,16 @@
+- generic [active] [ref=e1]:
+    - generic [ref=e3]:
+        - generic:
+            - generic:
+                - generic:
+                    - generic: VRM を読み込み中
+        - button "閉じる" [ref=e4] [cursor=pointer]:
+            - img [ref=e5]
+        - button "設定を開く" [ref=e7] [cursor=pointer]:
+            - img [ref=e8]
+    - generic:
+        - generic:
+            - generic:
+                - generic:
+                    - generic: Launching Trickcal...
+                    - generic: モデルを読み込み中

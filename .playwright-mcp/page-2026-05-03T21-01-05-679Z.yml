@@ -1,0 +1,345 @@
+- generic [ref=e3]:
+    - button "Dark mode" [ref=e5] [cursor=pointer]:
+        - generic [ref=e6]: Dark mode
+    - main [ref=e7]:
+        - complementary [ref=e8]:
+            - generic [ref=e9]:
+                - generic [ref=e11]:
+                    - generic [ref=e12]: Document
+                    - generic [ref=e14]: VRMC_vrm_animation
+                - generic [ref=e16]:
+                    - generic [ref=e18]:
+                        - button "New Animation" [ref=e19] [cursor=pointer]:
+                            - generic [ref=e20]: New Animation
+                        - generic [ref=e22] [cursor=pointer]: Import .vrm
+                        - generic [ref=e24] [cursor=pointer]: Load Existing Animation
+                    - table [ref=e28]:
+                        - rowgroup [ref=e29]:
+                            - row "VRM model Not loaded" [ref=e30]:
+                                - cell "VRM model" [ref=e31]
+                                - cell "Not loaded" [ref=e32]:
+                                    - code [ref=e33]: Not loaded
+                            - row "Spec version 1.0" [ref=e34]:
+                                - cell "Spec version" [ref=e35]
+                                - cell "1.0" [ref=e36]:
+                                    - code [ref=e37]: "1.0"
+        - generic [ref=e38]:
+            - generic [ref=e39]:
+                - generic [ref=e41]:
+                    - generic [ref=e42]: Preview
+                    - generic [ref=e44]: Import .vrm
+                - generic [ref=e48]:
+                    - generic [ref=e49]:
+                        - generic [ref=e50]: Loaded model
+                        - code [ref=e51]: Not loaded
+                    - generic [ref=e52]:
+                        - generic [ref=e53]: Available humanoid bones
+                        - code [ref=e54]: Load a VRM model to preview animation.
+                    - generic [ref=e55]:
+                        - generic [ref=e56]: Hips translation
+                        - code [ref=e57]: 0.00, 0.00, 0.00
+                    - generic [ref=e58]:
+                        - generic [ref=e59]: LookAt
+                        - code [ref=e60]: Disabled
+                    - generic [ref=e61]:
+                        - generic [ref=e62]: Expression weights
+                        - generic [ref=e63]:
+                            - img [ref=e65]
+                            - paragraph [ref=e82]: No expression tracks yet.
+            - generic [ref=e83]:
+                - generic [ref=e85]:
+                    - generic [ref=e86]: Playback
+                    - generic [ref=e88]: 30 FPS editing grid
+                - generic [ref=e90]:
+                    - generic [ref=e92]:
+                        - button "Play" [ref=e93] [cursor=pointer]:
+                            - generic [ref=e94]: Play
+                        - button "Rewind" [ref=e95] [cursor=pointer]:
+                            - generic [ref=e96]: Rewind
+                        - button "Add current pose key" [ref=e97] [cursor=pointer]:
+                            - generic [ref=e98]: Add current pose key
+                        - button "Delete selected key" [ref=e99] [cursor=pointer]:
+                            - generic [ref=e100]: Delete selected key
+                    - slider "slider between 0 and 2" [ref=e104] [cursor=pointer]
+                    - table [ref=e109]:
+                        - rowgroup [ref=e110]:
+                            - row "Current time 0.000s Selected track hipsTranslation" [ref=e111]:
+                                - cell "Current time" [ref=e112]
+                                - cell "0.000s" [ref=e113]
+                                - cell "Selected track" [ref=e114]
+                                - cell "hipsTranslation" [ref=e115]
+            - generic [ref=e116]:
+                - generic [ref=e117]:
+                    - generic [ref=e118]:
+                        - strong [ref=e119]: Timeline
+                        - generic [ref=e120]: 0.000s / 2.000s
+                    - generic [ref=e121]:
+                        - button "Play" [ref=e122] [cursor=pointer]:
+                            - generic [ref=e123]: Play
+                        - button "Add Key" [ref=e124] [cursor=pointer]:
+                            - generic [ref=e125]: Add Key
+                - generic [ref=e126]:
+                    - button "0.0s" [ref=e127] [cursor=pointer]
+                    - button "0.5s" [ref=e128] [cursor=pointer]
+                    - button "1.0s" [ref=e129] [cursor=pointer]
+                    - button "1.5s" [ref=e130] [cursor=pointer]
+                    - button "2.0s" [ref=e131] [cursor=pointer]
+                - generic [ref=e133]:
+                    - generic [ref=e134]:
+                        - button "hips hipsTranslation" [ref=e135] [cursor=pointer]:
+                            - generic [ref=e136]: hips
+                            - generic [ref=e137]: hipsTranslation
+                        - button "0.000s" [ref=e139] [cursor=pointer]
+                    - generic [ref=e140]:
+                        - button "hips boneRotation" [ref=e141] [cursor=pointer]:
+                            - generic [ref=e142]: hips
+                            - generic [ref=e143]: boneRotation
+                        - button "0.000s" [ref=e145] [cursor=pointer]
+                    - generic [ref=e146]:
+                        - button "spine boneRotation" [ref=e147] [cursor=pointer]:
+                            - generic [ref=e148]: spine
+                            - generic [ref=e149]: boneRotation
+                        - button "0.000s" [ref=e151] [cursor=pointer]
+                    - generic [ref=e152]:
+                        - button "head boneRotation" [ref=e153] [cursor=pointer]:
+                            - generic [ref=e154]: head
+                            - generic [ref=e155]: boneRotation
+                        - button "0.000s" [ref=e157] [cursor=pointer]
+                    - generic [ref=e158]:
+                        - button "leftUpperLeg boneRotation" [ref=e159] [cursor=pointer]:
+                            - generic [ref=e160]: leftUpperLeg
+                            - generic [ref=e161]: boneRotation
+                        - button "0.000s" [ref=e163] [cursor=pointer]
+                    - generic [ref=e164]:
+                        - button "leftLowerLeg boneRotation" [ref=e165] [cursor=pointer]:
+                            - generic [ref=e166]: leftLowerLeg
+                            - generic [ref=e167]: boneRotation
+                        - button "0.000s" [ref=e169] [cursor=pointer]
+                    - generic [ref=e170]:
+                        - button "leftFoot boneRotation" [ref=e171] [cursor=pointer]:
+                            - generic [ref=e172]: leftFoot
+                            - generic [ref=e173]: boneRotation
+                        - button "0.000s" [ref=e175] [cursor=pointer]
+                    - generic [ref=e176]:
+                        - button "rightUpperLeg boneRotation" [ref=e177] [cursor=pointer]:
+                            - generic [ref=e178]: rightUpperLeg
+                            - generic [ref=e179]: boneRotation
+                        - button "0.000s" [ref=e181] [cursor=pointer]
+                    - generic [ref=e182]:
+                        - button "rightLowerLeg boneRotation" [ref=e183] [cursor=pointer]:
+                            - generic [ref=e184]: rightLowerLeg
+                            - generic [ref=e185]: boneRotation
+                        - button "0.000s" [ref=e187] [cursor=pointer]
+                    - generic [ref=e188]:
+                        - button "rightFoot boneRotation" [ref=e189] [cursor=pointer]:
+                            - generic [ref=e190]: rightFoot
+                            - generic [ref=e191]: boneRotation
+                        - button "0.000s" [ref=e193] [cursor=pointer]
+                    - generic [ref=e194]:
+                        - button "leftUpperArm boneRotation" [ref=e195] [cursor=pointer]:
+                            - generic [ref=e196]: leftUpperArm
+                            - generic [ref=e197]: boneRotation
+                        - button "0.000s" [ref=e199] [cursor=pointer]
+                    - generic [ref=e200]:
+                        - button "leftLowerArm boneRotation" [ref=e201] [cursor=pointer]:
+                            - generic [ref=e202]: leftLowerArm
+                            - generic [ref=e203]: boneRotation
+                        - button "0.000s" [ref=e205] [cursor=pointer]
+                    - generic [ref=e206]:
+                        - button "leftHand boneRotation" [ref=e207] [cursor=pointer]:
+                            - generic [ref=e208]: leftHand
+                            - generic [ref=e209]: boneRotation
+                        - button "0.000s" [ref=e211] [cursor=pointer]
+                    - generic [ref=e212]:
+                        - button "rightUpperArm boneRotation" [ref=e213] [cursor=pointer]:
+                            - generic [ref=e214]: rightUpperArm
+                            - generic [ref=e215]: boneRotation
+                        - button "0.000s" [ref=e217] [cursor=pointer]
+                    - generic [ref=e218]:
+                        - button "rightLowerArm boneRotation" [ref=e219] [cursor=pointer]:
+                            - generic [ref=e220]: rightLowerArm
+                            - generic [ref=e221]: boneRotation
+                        - button "0.000s" [ref=e223] [cursor=pointer]
+                    - generic [ref=e224]:
+                        - button "rightHand boneRotation" [ref=e225] [cursor=pointer]:
+                            - generic [ref=e226]: rightHand
+                            - generic [ref=e227]: boneRotation
+                        - button "0.000s" [ref=e229] [cursor=pointer]
+        - complementary [ref=e230]:
+            - generic [ref=e231]:
+                - generic [ref=e233]:
+                    - generic [ref=e234]: Tracks
+                    - generic [ref=e236]: 16 tracks
+                - generic [ref=e237]:
+                    - generic [ref=e239]:
+                        - table [ref=e241]:
+                            - rowgroup [ref=e246]:
+                                - row "Track Type Interpolation" [ref=e247]:
+                                    - columnheader "Track" [ref=e248]:
+                                        - generic [ref=e249]: Track
+                                    - columnheader "Type" [ref=e250]:
+                                        - generic [ref=e251]: Type
+                                    - columnheader "Interpolation" [ref=e252]:
+                                        - generic [ref=e253]: Interpolation
+                        - table [ref=e258]:
+                            - rowgroup [ref=e263]:
+                                - row "hips translation hipsTranslation LINEAR" [ref=e264]:
+                                    - cell "hips translation" [ref=e265]:
+                                        - button "hips translation" [ref=e267] [cursor=pointer]
+                                    - cell "hipsTranslation" [ref=e268]:
+                                        - generic [ref=e269]: hipsTranslation
+                                    - cell "LINEAR" [ref=e270]:
+                                        - generic [ref=e271]: LINEAR
+                                - row "hips rotation boneRotation LINEAR" [ref=e272]:
+                                    - cell "hips rotation" [ref=e273]:
+                                        - button "hips rotation" [ref=e275] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e276]:
+                                        - generic [ref=e277]: boneRotation
+                                    - cell "LINEAR" [ref=e278]:
+                                        - generic [ref=e279]: LINEAR
+                                - row "spine rotation boneRotation LINEAR" [ref=e280]:
+                                    - cell "spine rotation" [ref=e281]:
+                                        - button "spine rotation" [ref=e283] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e284]:
+                                        - generic [ref=e285]: boneRotation
+                                    - cell "LINEAR" [ref=e286]:
+                                        - generic [ref=e287]: LINEAR
+                                - row "head rotation boneRotation LINEAR" [ref=e288]:
+                                    - cell "head rotation" [ref=e289]:
+                                        - button "head rotation" [ref=e291] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e292]:
+                                        - generic [ref=e293]: boneRotation
+                                    - cell "LINEAR" [ref=e294]:
+                                        - generic [ref=e295]: LINEAR
+                                - row "leftUpperLeg rotation boneRotation LINEAR" [ref=e296]:
+                                    - cell "leftUpperLeg rotation" [ref=e297]:
+                                        - button "leftUpperLeg rotation" [ref=e299] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e300]:
+                                        - generic [ref=e301]: boneRotation
+                                    - cell "LINEAR" [ref=e302]:
+                                        - generic [ref=e303]: LINEAR
+                                - row "leftLowerLeg rotation boneRotation LINEAR" [ref=e304]:
+                                    - cell "leftLowerLeg rotation" [ref=e305]:
+                                        - button "leftLowerLeg rotation" [ref=e307] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e308]:
+                                        - generic [ref=e309]: boneRotation
+                                    - cell "LINEAR" [ref=e310]:
+                                        - generic [ref=e311]: LINEAR
+                                - row "leftFoot rotation boneRotation LINEAR" [ref=e312]:
+                                    - cell "leftFoot rotation" [ref=e313]:
+                                        - button "leftFoot rotation" [ref=e315] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e316]:
+                                        - generic [ref=e317]: boneRotation
+                                    - cell "LINEAR" [ref=e318]:
+                                        - generic [ref=e319]: LINEAR
+                                - row "rightUpperLeg rotation boneRotation LINEAR" [ref=e320]:
+                                    - cell "rightUpperLeg rotation" [ref=e321]:
+                                        - button "rightUpperLeg rotation" [ref=e323] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e324]:
+                                        - generic [ref=e325]: boneRotation
+                                    - cell "LINEAR" [ref=e326]:
+                                        - generic [ref=e327]: LINEAR
+                                - row "rightLowerLeg rotation boneRotation LINEAR" [ref=e328]:
+                                    - cell "rightLowerLeg rotation" [ref=e329]:
+                                        - button "rightLowerLeg rotation" [ref=e331] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e332]:
+                                        - generic [ref=e333]: boneRotation
+                                    - cell "LINEAR" [ref=e334]:
+                                        - generic [ref=e335]: LINEAR
+                                - row "rightFoot rotation boneRotation LINEAR" [ref=e336]:
+                                    - cell "rightFoot rotation" [ref=e337]:
+                                        - button "rightFoot rotation" [ref=e339] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e340]:
+                                        - generic [ref=e341]: boneRotation
+                                    - cell "LINEAR" [ref=e342]:
+                                        - generic [ref=e343]: LINEAR
+                                - row "leftUpperArm rotation boneRotation LINEAR" [ref=e344]:
+                                    - cell "leftUpperArm rotation" [ref=e345]:
+                                        - button "leftUpperArm rotation" [ref=e347] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e348]:
+                                        - generic [ref=e349]: boneRotation
+                                    - cell "LINEAR" [ref=e350]:
+                                        - generic [ref=e351]: LINEAR
+                                - row "leftLowerArm rotation boneRotation LINEAR" [ref=e352]:
+                                    - cell "leftLowerArm rotation" [ref=e353]:
+                                        - button "leftLowerArm rotation" [ref=e355] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e356]:
+                                        - generic [ref=e357]: boneRotation
+                                    - cell "LINEAR" [ref=e358]:
+                                        - generic [ref=e359]: LINEAR
+                                - row "leftHand rotation boneRotation LINEAR" [ref=e360]:
+                                    - cell "leftHand rotation" [ref=e361]:
+                                        - button "leftHand rotation" [ref=e363] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e364]:
+                                        - generic [ref=e365]: boneRotation
+                                    - cell "LINEAR" [ref=e366]:
+                                        - generic [ref=e367]: LINEAR
+                                - row "rightUpperArm rotation boneRotation LINEAR" [ref=e368]:
+                                    - cell "rightUpperArm rotation" [ref=e369]:
+                                        - button "rightUpperArm rotation" [ref=e371] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e372]:
+                                        - generic [ref=e373]: boneRotation
+                                    - cell "LINEAR" [ref=e374]:
+                                        - generic [ref=e375]: LINEAR
+                                - row "rightLowerArm rotation boneRotation LINEAR" [ref=e376]:
+                                    - cell "rightLowerArm rotation" [ref=e377]:
+                                        - button "rightLowerArm rotation" [ref=e379] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e380]:
+                                        - generic [ref=e381]: boneRotation
+                                    - cell "LINEAR" [ref=e382]:
+                                        - generic [ref=e383]: LINEAR
+                                - row "rightHand rotation boneRotation LINEAR" [ref=e384]:
+                                    - cell "rightHand rotation" [ref=e385]:
+                                        - button "rightHand rotation" [ref=e387] [cursor=pointer]
+                                    - cell "boneRotation" [ref=e388]:
+                                        - generic [ref=e389]: boneRotation
+                                    - cell "LINEAR" [ref=e390]:
+                                        - generic [ref=e391]: LINEAR
+                    - button "Remove selected optional track" [ref=e393] [cursor=pointer]:
+                        - generic [ref=e394]: Remove selected optional track
+            - generic [ref=e395]:
+                - generic [ref=e397]:
+                    - generic [ref=e398]: Inspector
+                    - generic [ref=e400] [cursor=pointer]:
+                        - generic:
+                            - combobox [ref=e402]
+                            - generic [ref=e403]: LINEAR
+                        - img [ref=e406]
+                - generic [ref=e410]:
+                    - table [ref=e412]:
+                        - rowgroup [ref=e416]:
+                            - row "Time Value" [ref=e417]:
+                                - columnheader "Time" [ref=e418]:
+                                    - generic [ref=e419]: Time
+                                - columnheader "Value" [ref=e420]:
+                                    - generic [ref=e421]: Value
+                    - table [ref=e426]:
+                        - rowgroup [ref=e430]:
+                            - row "decrease number increase number 0 decrease number increase number 0 decrease number increase number 0 decrease number increase number 0" [ref=e431]:
+                                - cell "decrease number increase number 0" [ref=e432]:
+                                    - generic [ref=e434]:
+                                        - button "decrease number" [ref=e435]:
+                                            - img [ref=e437]
+                                        - button "increase number" [ref=e439] [cursor=pointer]:
+                                            - img [ref=e441]
+                                        - spinbutton [ref=e445]: "0"
+                                - cell "decrease number increase number 0 decrease number increase number 0 decrease number increase number 0" [ref=e446]:
+                                    - generic [ref=e448]:
+                                        - generic [ref=e449]:
+                                            - button "decrease number" [ref=e450] [cursor=pointer]:
+                                                - img [ref=e452]
+                                            - button "increase number" [ref=e454] [cursor=pointer]:
+                                                - img [ref=e456]
+                                            - spinbutton [ref=e460]: "0"
+                                        - generic [ref=e461]:
+                                            - button "decrease number" [ref=e462] [cursor=pointer]:
+                                                - img [ref=e464]
+                                            - button "increase number" [ref=e466] [cursor=pointer]:
+                                                - img [ref=e468]
+                                            - spinbutton [ref=e472]: "0"
+                                        - generic [ref=e473]:
+                                            - button "decrease number" [ref=e474] [cursor=pointer]:
+                                                - img [ref=e476]
+                                            - button "increase number" [ref=e478] [cursor=pointer]:
+                                                - img [ref=e480]
+                                            - spinbutton [ref=e484]: "0"

@@ -1,0 +1,15 @@
+- generic [ref=e6]:
+    - generic [ref=e7]:
+        - generic [ref=e8]:
+            - generic [ref=e10]: VRM Animation Web Editor
+            - generic [ref=e12]: Frontend-only authoring flow
+        - button "Dark mode" [ref=e13] [cursor=pointer]:
+            - generic [ref=e14]: Dark mode
+    - heading "Author VRMC_vrm_animation files in the browser." [level=1] [ref=e15]
+    - paragraph [ref=e16]: The shell keeps routing and theme state intact while the home route becomes a dedicated animation workspace for humanoid, expression, and LookAt tracks.
+    - generic [ref=e17]:
+        - link "Editor" [ref=e18] [cursor=pointer]:
+            - /url: /
+            - button "Editor" [ref=e19]:
+                - generic [ref=e20]: Editor
+        - generic [ref=e21]: "Export target: embedded JSON glTF with VRMC_vrm_animation."

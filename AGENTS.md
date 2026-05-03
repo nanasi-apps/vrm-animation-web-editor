@@ -6,8 +6,6 @@ This project is using Vite+, a unified toolchain built on top of Vite, Rolldown,
 
 Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.dev/guide/.
 
-Project documentation is available under `docs/`; check it when you need domain or specification context.
-
 ## Review Checklist
 
 - [ ] Run `vp install` after pulling remote changes and before getting started.
