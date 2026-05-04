@@ -1,0 +1,18 @@
+{
+  "name": "VRMA Editor",
+  "short_name": "VRMA Editor",
+  "description": "Browser VRM animation editor with timeline editing, direct bone controls, and live preview.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09111d",
+  "theme_color": "#09111d",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
