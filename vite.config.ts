@@ -4,8 +4,8 @@ export default defineConfig({
   staged: {
     "*": "vp check --fix",
   },
-  fmt: {},
-  lint: { options: { typeAware: true, typeCheck: true } },
+  fmt: { ignorePatterns: ["docs/**"] },
+  lint: { ignorePatterns: ["docs/**"], options: { typeAware: true, typeCheck: true } },
   run: {
     cache: true,
   },
