@@ -14,11 +14,20 @@ import {
   generateAnimation as generateAnimationDocument,
   type AnimationGeneratorKind,
 } from "../domain/vrma/generators";
-import { exportVrmaToText, importVrmaFromText } from "../domain/vrma/io";
+import {
+  exportVrmaToArrayBuffer,
+  exportVrmaToText,
+  importVrmaFromArrayBuffer,
+} from "../domain/vrma/io";
 import { eulerDegreesToQuaternion, quaternionToEulerDegrees } from "../domain/vrma/rotation";
 import { sampleDocument } from "../domain/vrma/sampling";
 import type { HumanBoneName, Interpolation, Vec3, Vec4, VrmaTrack } from "../domain/vrma/types";
 import { validateDocument } from "../domain/vrma/validation";
+
+type CopiedKeyframe =
+  | { kind: "expression"; value: number }
+  | { kind: "hipsTranslation"; value: Vec3 }
+  | { kind: "rotation"; value: Vec4 };
 
 function normalizeTime(value: number) {
   return Math.max(0, Number.isFinite(value) ? value : 0);
@@ -32,6 +41,7 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
   const isPlaying = ref(false);
   const selectedTrackId = ref<string | null>(document.value.tracks[0]?.id ?? null);
   const selectedKeyframeIndex = ref(0);
+  const copiedKeyframe = ref<CopiedKeyframe | null>(null);
   let lastFrameTime = 0;
   let animationFrameId: number | null = null;
 
@@ -51,6 +61,7 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
   });
 
   const exportText = computed(() => exportVrmaToText(document.value));
+  const exportBytes = computed(() => exportVrmaToArrayBuffer(document.value));
 
   function selectTrack(trackId: string) {
     selectedTrackId.value = trackId;
@@ -125,7 +136,7 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
 
   async function importAnimationFile(file: File) {
     stopPlayback();
-    document.value = importVrmaFromText(await file.text(), file.name);
+    document.value = importVrmaFromArrayBuffer(await file.arrayBuffer(), file.name);
     selectedTrackId.value = document.value.tracks[0]?.id ?? null;
     selectedKeyframeIndex.value = 0;
     currentTime.value = 0;
@@ -314,6 +325,110 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
     selectedKeyframeIndex.value = Math.min(keyframeIndex, track.keyframes.length - 1);
   }
 
+  function copyKeyframe(trackId: string, keyframeIndex: number) {
+    const track = document.value.tracks.find((candidate) => candidate.id === trackId);
+
+    if (!track) {
+      return;
+    }
+
+    if (track.kind === "expression") {
+      const keyframe = track.keyframes[keyframeIndex];
+
+      if (!keyframe) {
+        return;
+      }
+
+      copiedKeyframe.value = { kind: "expression", value: keyframe.value };
+      return;
+    }
+
+    if (track.kind === "hipsTranslation") {
+      const keyframe = track.keyframes[keyframeIndex];
+
+      if (!keyframe) {
+        return;
+      }
+
+      copiedKeyframe.value = { kind: "hipsTranslation", value: [...keyframe.value] };
+      return;
+    }
+
+    const keyframe = track.keyframes[keyframeIndex];
+
+    if (!keyframe) {
+      return;
+    }
+
+    copiedKeyframe.value = { kind: "rotation", value: [...keyframe.value] };
+  }
+
+  function copySelectedKeyframe() {
+    const track = selectedTrack.value;
+
+    if (!track) {
+      return;
+    }
+
+    copyKeyframe(track.id, selectedKeyframeIndex.value);
+  }
+
+  function canPasteKeyframeToTrack(trackId: string) {
+    const track = document.value.tracks.find((candidate) => candidate.id === trackId);
+    const keyframe = copiedKeyframe.value;
+
+    if (!track || !keyframe) {
+      return false;
+    }
+
+    return (
+      (track.kind === "expression" && keyframe.kind === "expression") ||
+      (track.kind === "hipsTranslation" && keyframe.kind === "hipsTranslation") ||
+      ((track.kind === "boneRotation" || track.kind === "lookAtRotation") &&
+        keyframe.kind === "rotation")
+    );
+  }
+
+  function pasteKeyframeToTrack(trackId: string, time: number) {
+    const track = document.value.tracks.find((candidate) => candidate.id === trackId);
+    const keyframe = copiedKeyframe.value;
+
+    if (!track || !keyframe || !canPasteKeyframeToTrack(trackId)) {
+      return;
+    }
+
+    const nextTime = Number(normalizeTime(time).toFixed(3));
+
+    if (track.kind === "expression" && keyframe.kind === "expression") {
+      track.keyframes.push({ time: nextTime, value: keyframe.value });
+    } else if (track.kind === "hipsTranslation" && keyframe.kind === "hipsTranslation") {
+      track.keyframes.push({ time: nextTime, value: [...keyframe.value] });
+    } else if (
+      (track.kind === "boneRotation" || track.kind === "lookAtRotation") &&
+      keyframe.kind === "rotation"
+    ) {
+      track.keyframes.push({ time: nextTime, value: [...keyframe.value] });
+    }
+
+    document.value = upsertTrack(document.value, { ...track });
+    selectedTrackId.value = trackId;
+    currentTime.value = Math.min(document.value.duration, nextTime);
+
+    const nextTrack = document.value.tracks.find((candidate) => candidate.id === trackId);
+    selectedKeyframeIndex.value =
+      nextTrack?.keyframes.findIndex((candidate) => candidate.time === nextTime) ?? 0;
+  }
+
+  function pasteSelectedKeyframeAtCurrentTime() {
+    const track = selectedTrack.value;
+
+    if (!track) {
+      return;
+    }
+
+    pasteKeyframeToTrack(track.id, currentTime.value);
+  }
+
   function moveKeyframe(trackId: string, keyframeIndex: number, time: number) {
     const track = document.value.tracks.find((candidate) => candidate.id === trackId);
 
@@ -461,10 +576,15 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
     addLookAtTrack,
     addPresetExpressionTrack,
     currentTime,
+    canPasteKeyframeToTrack,
+    copiedKeyframe,
+    copyKeyframe,
+    copySelectedKeyframe,
     diagnostics,
     document,
     ensureLookAtTrack,
     exportText,
+    exportBytes,
     generateAnimation,
     importAnimationFile,
     importVrmFile,
@@ -473,6 +593,8 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
     previewModelFile,
     previewModelName,
     presetExpressions: PRESET_EXPRESSION_NAMES,
+    pasteKeyframeToTrack,
+    pasteSelectedKeyframeAtCurrentTime,
     removeSelectedKeyframe,
     removeSelectedTrack,
     removeKeyframe,

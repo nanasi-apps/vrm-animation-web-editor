@@ -9,7 +9,7 @@ const canExport = computed(
 );
 
 function download() {
-  const blob = new Blob([editorStore.exportText], { type: "model/gltf+json" });
+  const blob = new Blob([editorStore.exportBytes], { type: "model/gltf-binary" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
