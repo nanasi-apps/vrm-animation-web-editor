@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   getHumanBoneLabelJa,
   HUMAN_BONE_NAMES,
@@ -9,13 +9,19 @@ import { getVrmaExportFileName } from "../../domain/vrma/io";
 import { useAnimationEditorStore } from "../../stores/animation-editor";
 
 const editorStore = useAnimationEditorStore();
-const MAX_KEY_DOTS_PER_ROW = 100;
+const MAX_KEY_DOTS_PER_ROW = 1000;
+const SIMILAR_KEYFRAME_VALUE_EPSILON = 0.08;
 const MIN_VISIBLE_TRACK_ROWS = 7;
 const MIN_TIMELINE_ZOOM = 1;
 const MAX_TIMELINE_ZOOM = 4;
+const TIMELINE_ROW_HEIGHT = 46;
+const VIRTUAL_ROW_OVERSCAN = 4;
 const activeScrubLane = ref<HTMLElement | null>(null);
 const addTrackMenuOpen = ref(false);
+const timelineScroll = ref<HTMLElement | null>(null);
 const timelineScrollLeft = ref(0);
+const timelineScrollTop = ref(0);
+const timelineViewportHeight = ref(TIMELINE_ROW_HEIGHT * MIN_VISIBLE_TRACK_ROWS);
 const timelineZoom = ref(1);
 const contextMenu = ref<
   | { kind: "timeline"; trackId: string; time: number; x: number; y: number }
@@ -36,9 +42,14 @@ const activeKeyDrag = ref<{
 } | null>(null);
 
 type TimelineKeyframe = (typeof editorStore.document.tracks)[number]["keyframes"][number];
+type DisplayKeyframe = {
+  keyframe: TimelineKeyframe;
+  keyframeCount: number;
+  keyframeIndex: number;
+};
 
 interface TimelineRow {
-  displayKeyframes: Array<{ keyframe: TimelineKeyframe; keyframeIndex: number }>;
+  displayKeyframes: DisplayKeyframe[];
   empty: boolean;
   id: string;
   keyframes: TimelineKeyframe[];
@@ -46,31 +57,107 @@ interface TimelineRow {
   type: string;
 }
 
+interface VirtualTimelineRow {
+  index: number;
+  row: TimelineRow;
+}
+
+function getKeyframeValues(keyframe: TimelineKeyframe) {
+  return Array.isArray(keyframe.value) ? keyframe.value : [keyframe.value];
+}
+
+function getKeyframeValueDelta(left: TimelineKeyframe, right: TimelineKeyframe) {
+  const leftValues = getKeyframeValues(left);
+  const rightValues = getKeyframeValues(right);
+  const valueCount = Math.min(leftValues.length, rightValues.length);
+  let largestDelta = 0;
+
+  for (let index = 0; index < valueCount; index += 1) {
+    largestDelta = Math.max(
+      largestDelta,
+      Math.abs((leftValues[index] ?? 0) - (rightValues[index] ?? 0)),
+    );
+  }
+
+  return largestDelta;
+}
+
+function getValueClusteredKeyframes(keyframes: TimelineKeyframe[]) {
+  const displayKeyframes: DisplayKeyframe[] = [];
+  let currentCluster: DisplayKeyframe | null = null;
+
+  for (const [keyframeIndex, keyframe] of keyframes.entries()) {
+    if (
+      currentCluster &&
+      getKeyframeValueDelta(currentCluster.keyframe, keyframe) <= SIMILAR_KEYFRAME_VALUE_EPSILON
+    ) {
+      currentCluster.keyframeCount += 1;
+      continue;
+    }
+
+    currentCluster = {
+      keyframe,
+      keyframeCount: 1,
+      keyframeIndex,
+    };
+    displayKeyframes.push(currentCluster);
+  }
+
+  return displayKeyframes;
+}
+
 function getDisplayKeyframes(row: Pick<TimelineRow, "id" | "keyframes">) {
-  if (row.keyframes.length <= MAX_KEY_DOTS_PER_ROW) {
-    return row.keyframes.map((keyframe, keyframeIndex) => ({ keyframe, keyframeIndex }));
+  const maxKeyDots = Math.max(1, Math.floor(MAX_KEY_DOTS_PER_ROW * timelineZoom.value));
+  const buckets = new Map<number, DisplayKeyframe>();
+
+  for (const displayKeyframe of getValueClusteredKeyframes(row.keyframes)) {
+    const { keyframe, keyframeCount, keyframeIndex } = displayKeyframe;
+    const bucketIndex = Math.floor((positionPercent(keyframe.time) / 100) * (maxKeyDots - 1));
+    const existingBucket = buckets.get(bucketIndex);
+
+    if (existingBucket) {
+      existingBucket.keyframeCount += keyframeCount;
+      continue;
+    }
+
+    buckets.set(bucketIndex, {
+      keyframe,
+      keyframeCount,
+      keyframeIndex,
+    });
   }
 
-  const indexes = new Set<number>();
-  const stride = Math.ceil(row.keyframes.length / MAX_KEY_DOTS_PER_ROW);
-
-  for (let index = 0; index < row.keyframes.length; index += stride) {
-    indexes.add(index);
-  }
-
-  indexes.add(0);
-  indexes.add(row.keyframes.length - 1);
+  buckets.set(-1, { keyframe: row.keyframes[0]!, keyframeCount: 1, keyframeIndex: 0 });
+  buckets.set(maxKeyDots, {
+    keyframe: row.keyframes[row.keyframes.length - 1]!,
+    keyframeCount: 1,
+    keyframeIndex: row.keyframes.length - 1,
+  });
 
   if (row.id === editorStore.selectedTrackId) {
-    indexes.add(editorStore.selectedKeyframeIndex);
+    const selectedKeyframe = row.keyframes[editorStore.selectedKeyframeIndex];
+
+    if (selectedKeyframe) {
+      buckets.set(maxKeyDots + 1, {
+        keyframe: selectedKeyframe,
+        keyframeCount: 1,
+        keyframeIndex: editorStore.selectedKeyframeIndex,
+      });
+    }
   }
 
-  return [...indexes]
-    .sort((left, right) => left - right)
-    .map((keyframeIndex) => ({
-      keyframe: row.keyframes[keyframeIndex]!,
-      keyframeIndex,
-    }));
+  const seenIndexes = new Set<number>();
+
+  return [...buckets.values()]
+    .sort((left, right) => left.keyframe.time - right.keyframe.time)
+    .filter((displayKeyframe) => {
+      if (seenIndexes.has(displayKeyframe.keyframeIndex)) {
+        return false;
+      }
+
+      seenIndexes.add(displayKeyframe.keyframeIndex);
+      return true;
+    });
 }
 
 const timelineRows = computed(() => {
@@ -111,6 +198,30 @@ const timelineRows = computed(() => {
   return [...trackRows, ...emptyRows];
 });
 
+const totalRowsHeight = computed(() => timelineRows.value.length * TIMELINE_ROW_HEIGHT);
+const visibleRowStart = computed(() => {
+  const maxStart = Math.max(0, timelineRows.value.length - 1);
+  const rawStart = Math.floor(timelineScrollTop.value / TIMELINE_ROW_HEIGHT) - VIRTUAL_ROW_OVERSCAN;
+
+  return Math.min(maxStart, Math.max(0, rawStart));
+});
+const visibleRowEnd = computed(() => {
+  const visibleCount = Math.ceil(timelineViewportHeight.value / TIMELINE_ROW_HEIGHT);
+
+  return Math.min(
+    timelineRows.value.length,
+    visibleRowStart.value + visibleCount + VIRTUAL_ROW_OVERSCAN * 2,
+  );
+});
+const virtualRows = computed<VirtualTimelineRow[]>(() =>
+  timelineRows.value.slice(visibleRowStart.value, visibleRowEnd.value).map((row, offset) => ({
+    index: visibleRowStart.value + offset,
+    row,
+  })),
+);
+const virtualWindowTop = computed(() => `${visibleRowStart.value * TIMELINE_ROW_HEIGHT}px`);
+const virtualSpacerHeight = computed(() => `${totalRowsHeight.value}px`);
+
 const playheadPercent = computed(() => {
   if (editorStore.document.duration <= 0) {
     return 0;
@@ -119,12 +230,13 @@ const playheadPercent = computed(() => {
   return (editorStore.currentTime / editorStore.document.duration) * 100;
 });
 
-const timelineWidth = computed(() => `${timelineZoom.value * 100}%`);
+const timelineWidth = computed(() => `calc(150px + (100% - 150px) * ${timelineZoom.value})`);
+const timelineLaneWidth = computed(() => `${timelineZoom.value * 100}%`);
 const rulerOffset = computed(() => `translateX(-${timelineScrollLeft.value}px)`);
 const trackPlayheadLeft = computed(() => {
   const ratio = playheadPercent.value / 100;
 
-  return `calc(${150 * (1 - ratio)}px + ${timelineZoom.value * ratio * 100}% - ${timelineScrollLeft.value}px)`;
+  return `calc(150px + (100% - 150px) * ${timelineZoom.value * ratio} - ${timelineScrollLeft.value}px)`;
 });
 
 const availableBones = computed(() =>
@@ -254,7 +366,34 @@ function startKeyDrag(event: PointerEvent, trackId: string, keyframeIndex: numbe
 }
 
 function handleTimelineScroll(event: Event) {
-  timelineScrollLeft.value = (event.currentTarget as HTMLElement).scrollLeft;
+  const scrollArea = event.currentTarget as HTMLElement;
+
+  timelineScrollLeft.value = scrollArea.scrollLeft;
+  timelineScrollTop.value = scrollArea.scrollTop;
+  timelineViewportHeight.value = scrollArea.clientHeight;
+}
+
+function scrollToKeepPlayheadVisible() {
+  const scrollArea = timelineScroll.value;
+
+  if (!scrollArea || !editorStore.isPlaying || timelineZoom.value <= 1) {
+    return;
+  }
+
+  const ratio = playheadPercent.value / 100;
+  const playheadX = 150 + (scrollArea.scrollWidth - 150) * ratio;
+  const playheadLeft = playheadX - scrollArea.scrollLeft;
+  const margin = 48;
+  const minVisibleLeft = 150 + margin;
+  const maxVisibleLeft = scrollArea.clientWidth - margin;
+
+  if (playheadLeft > maxVisibleLeft) {
+    scrollArea.scrollLeft = playheadX - maxVisibleLeft;
+  } else if (playheadLeft < minVisibleLeft) {
+    scrollArea.scrollLeft = playheadX - minVisibleLeft;
+  }
+
+  timelineScrollLeft.value = scrollArea.scrollLeft;
 }
 
 function handleTimelineWheel(event: WheelEvent) {
@@ -263,7 +402,12 @@ function handleTimelineWheel(event: WheelEvent) {
   event.preventDefault();
 
   if (!event.altKey) {
-    scrollArea.scrollLeft += event.deltaX || event.deltaY;
+    if (event.shiftKey) {
+      scrollArea.scrollLeft += event.deltaX || event.deltaY;
+    } else {
+      scrollArea.scrollTop += event.deltaY;
+      scrollArea.scrollLeft += event.deltaX;
+    }
     return;
   }
 
@@ -286,6 +430,13 @@ function handleTimelineWheel(event: WheelEvent) {
     timelineScrollLeft.value = scrollArea.scrollLeft;
   });
 }
+
+watch(
+  () => editorStore.currentTime,
+  () => {
+    scrollToKeepPlayheadVisible();
+  },
+);
 
 function openTimelineMenu(event: MouseEvent, trackId: string) {
   event.preventDefault();
@@ -442,6 +593,11 @@ function addTrack(type: "hips" | "lookAt" | "bone" | "expression", name?: string
 }
 
 onMounted(() => {
+  void nextTick(() => {
+    if (timelineScroll.value) {
+      timelineViewportHeight.value = timelineScroll.value.clientHeight;
+    }
+  });
   window.addEventListener("keydown", handleKeyShortcut);
 });
 
@@ -528,7 +684,7 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="time-ruler">
-      <div class="ruler-track" :style="{ transform: rulerOffset, width: timelineWidth }">
+      <div class="ruler-track" :style="{ transform: rulerOffset, width: timelineLaneWidth }">
         <button
           v-for="mark in [0, 0.25, 0.5, 0.75, 1]"
           :key="mark"
@@ -545,53 +701,78 @@ onBeforeUnmount(() => {
 
     <div class="timeline-body">
       <div class="track-playhead" :style="{ left: trackPlayheadLeft }" />
-      <div class="timeline-scroll" @scroll="handleTimelineScroll" @wheel="handleTimelineWheel">
+      <div
+        ref="timelineScroll"
+        class="timeline-scroll"
+        @scroll="handleTimelineScroll"
+        @wheel="handleTimelineWheel"
+      >
         <div
-          v-for="row in timelineRows"
-          :key="row.id"
-          class="track-row"
-          :style="{ width: timelineWidth }"
+          class="timeline-virtual-spacer"
+          :style="{ height: virtualSpacerHeight, width: timelineWidth }"
         >
-          <button
-            type="button"
-            class="track-label"
-            :class="{
-              active: row.id === editorStore.selectedTrackId,
-              empty: row.empty,
-            }"
-            :disabled="row.empty"
-            @click="!row.empty && editorStore.selectTrack(row.id)"
-            @contextmenu="!row.empty && openTrackMenu($event, row.id)"
-          >
-            <span>{{ row.empty ? "" : row.label }}</span>
-            <small>{{ row.empty ? "" : row.type }}</small>
-          </button>
-          <div
-            class="key-lane"
-            :class="{ empty: row.empty }"
-            @contextmenu="openRowTimelineMenu($event, row)"
-            @pointerdown="startRowScrub"
-          >
-            <button
-              v-for="displayKeyframe in row.displayKeyframes"
-              :key="`${row.id}-${displayKeyframe.keyframeIndex}-${displayKeyframe.keyframe.time}`"
-              type="button"
-              class="key-dot"
-              :class="{
-                active:
-                  row.id === editorStore.selectedTrackId &&
-                  displayKeyframe.keyframeIndex === editorStore.selectedKeyframeIndex,
-              }"
-              :style="{
-                left: `${positionPercent(displayKeyframe.keyframe.time)}%`,
-              }"
-              :title="`${displayKeyframe.keyframe.time.toFixed(3)}s`"
-              @click.stop="
-                selectKey(row.id, displayKeyframe.keyframeIndex, displayKeyframe.keyframe.time)
-              "
-              @contextmenu.stop="openKeyMenu($event, row.id, displayKeyframe.keyframeIndex)"
-              @pointerdown.stop="startKeyDrag($event, row.id, displayKeyframe.keyframeIndex)"
-            />
+          <div class="timeline-virtual-window" :style="{ top: virtualWindowTop }">
+            <div v-for="virtualRow in virtualRows" :key="virtualRow.row.id" class="track-row">
+              <button
+                type="button"
+                class="track-label"
+                :class="{
+                  active: virtualRow.row.id === editorStore.selectedTrackId,
+                  empty: virtualRow.row.empty,
+                }"
+                :disabled="virtualRow.row.empty"
+                @click="!virtualRow.row.empty && editorStore.selectTrack(virtualRow.row.id)"
+                @contextmenu="!virtualRow.row.empty && openTrackMenu($event, virtualRow.row.id)"
+              >
+                <span>{{ virtualRow.row.empty ? "" : virtualRow.row.label }}</span>
+                <small>{{ virtualRow.row.empty ? "" : virtualRow.row.type }}</small>
+              </button>
+              <div
+                class="key-lane"
+                :class="{ empty: virtualRow.row.empty }"
+                @contextmenu="openRowTimelineMenu($event, virtualRow.row)"
+                @pointerdown="startRowScrub"
+              >
+                <button
+                  v-for="displayKeyframe in virtualRow.row.displayKeyframes"
+                  :key="`${virtualRow.row.id}-${displayKeyframe.keyframeIndex}-${displayKeyframe.keyframe.time}`"
+                  type="button"
+                  class="key-dot"
+                  :aria-label="
+                    displayKeyframe.keyframeCount > 1
+                      ? `${displayKeyframe.keyframeCount} keyframes around ${displayKeyframe.keyframe.time.toFixed(3)}s`
+                      : `Keyframe at ${displayKeyframe.keyframe.time.toFixed(3)}s`
+                  "
+                  :class="{
+                    active:
+                      virtualRow.row.id === editorStore.selectedTrackId &&
+                      displayKeyframe.keyframeIndex === editorStore.selectedKeyframeIndex,
+                    clustered: displayKeyframe.keyframeCount > 1,
+                  }"
+                  :style="{
+                    left: `${positionPercent(displayKeyframe.keyframe.time)}%`,
+                  }"
+                  :title="
+                    displayKeyframe.keyframeCount > 1
+                      ? `${displayKeyframe.keyframe.time.toFixed(3)}s (${displayKeyframe.keyframeCount} keys)`
+                      : `${displayKeyframe.keyframe.time.toFixed(3)}s`
+                  "
+                  @click.stop="
+                    selectKey(
+                      virtualRow.row.id,
+                      displayKeyframe.keyframeIndex,
+                      displayKeyframe.keyframe.time,
+                    )
+                  "
+                  @contextmenu.stop="
+                    openKeyMenu($event, virtualRow.row.id, displayKeyframe.keyframeIndex)
+                  "
+                  @pointerdown.stop="
+                    startKeyDrag($event, virtualRow.row.id, displayKeyframe.keyframeIndex)
+                  "
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -725,13 +906,27 @@ onBeforeUnmount(() => {
 }
 
 .timeline-scroll {
-  display: grid;
-  grid-auto-rows: minmax(46px, 1fr);
-  grid-template-rows: repeat(7, minmax(46px, 1fr));
   height: 100%;
   max-height: none;
   overflow: auto;
   padding-right: 4px;
+  position: relative;
+  scrollbar-width: none;
+}
+
+.timeline-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline-virtual-spacer {
+  min-height: 100%;
+  position: relative;
+}
+
+.timeline-virtual-window {
+  left: 0;
+  position: absolute;
+  right: 0;
 }
 
 .track-row {
@@ -740,7 +935,7 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0;
   grid-template-columns: 150px minmax(0, 1fr);
-  min-height: 46px;
+  height: 46px;
 }
 
 .track-row:first-child {
@@ -748,7 +943,7 @@ onBeforeUnmount(() => {
 }
 
 .track-label {
-  background: transparent;
+  background: var(--el-bg-color);
   border: 0;
   border-right: 1px solid var(--el-border-color-lighter);
   border-radius: 0;
@@ -765,7 +960,7 @@ onBeforeUnmount(() => {
 }
 
 .track-label.active {
-  background: color-mix(in srgb, var(--el-color-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--el-bg-color) 92%, var(--el-color-primary));
   color: var(--el-color-primary);
 }
 
@@ -811,6 +1006,11 @@ onBeforeUnmount(() => {
 .key-dot.active {
   background: var(--el-color-primary);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--el-color-primary) 22%, transparent);
+}
+
+.key-dot.clustered {
+  border-color: rgba(40, 24, 0, 0.5);
+  box-shadow: 0 0 0 3px rgba(240, 193, 75, 0.18);
 }
 
 .add-track-menu,
