@@ -172,18 +172,52 @@ function readFloatAccessor(asset: ParsedGltfAsset, accessorIndex: number) {
   };
 }
 
-function groupValues(values: Float32Array, size: number) {
-  const grouped: number[][] = [];
-
-  for (let index = 0; index < values.length; index += size) {
-    grouped.push(Array.from(values.slice(index, index + size)));
-  }
-
-  return grouped;
-}
-
 function normalizeInterpolation(value?: string): Interpolation {
   return value === "STEP" ? "STEP" : "LINEAR";
+}
+
+function createVec3Keyframes(times: Float32Array, values: Float32Array) {
+  const keyframeCount = Math.min(times.length, Math.floor(values.length / 3));
+
+  return Array.from({ length: keyframeCount }, (_, index) => {
+    const valueIndex = index * 3;
+
+    return {
+      time: times[index] ?? 0,
+      value: [
+        values[valueIndex] ?? 0,
+        values[valueIndex + 1] ?? 0,
+        values[valueIndex + 2] ?? 0,
+      ] as Vec3,
+    };
+  });
+}
+
+function createVec4Keyframes(times: Float32Array, values: Float32Array) {
+  const keyframeCount = Math.min(times.length, Math.floor(values.length / 4));
+
+  return Array.from({ length: keyframeCount }, (_, index) => {
+    const valueIndex = index * 4;
+
+    return {
+      time: times[index] ?? 0,
+      value: [
+        values[valueIndex] ?? 0,
+        values[valueIndex + 1] ?? 0,
+        values[valueIndex + 2] ?? 0,
+        values[valueIndex + 3] ?? 1,
+      ] as Vec4,
+    };
+  });
+}
+
+function createExpressionKeyframes(times: Float32Array, values: Float32Array) {
+  const keyframeCount = Math.min(times.length, Math.floor(values.length / 3));
+
+  return Array.from({ length: keyframeCount }, (_, index) => ({
+    time: times[index] ?? 0,
+    value: values[index * 3] ?? 0,
+  }));
 }
 
 function parseGltfJson(text: string): GltfLike {
@@ -372,32 +406,29 @@ function importVrmaFromAsset(asset: ParsedGltfAsset, fileName: string): VrmaDocu
     const input = readFloatAccessor(asset, sampler.input);
     const output = readFloatAccessor(asset, sampler.output);
     const interpolation = normalizeInterpolation(sampler.interpolation);
-    const times = Array.from(input.values);
 
     if (channel.target.path === "rotation") {
       const bone = nodeToBone.get(channel.target.node);
 
       if (bone) {
-        const values = groupValues(output.values, 4) as Vec4[];
         const track = tracks.find(
           (candidate) => candidate.kind === "boneRotation" && candidate.bone === bone,
         );
 
         if (track?.kind === "boneRotation") {
           track.interpolation = interpolation;
-          track.keyframes = values.map((value, index) => ({ time: times[index] ?? 0, value }));
+          track.keyframes = createVec4Keyframes(input.values, output.values);
         }
 
         continue;
       }
 
       if (channel.target.node === extension.lookAt?.node) {
-        const values = groupValues(output.values, 4) as Vec4[];
         const track = tracks.find((candidate) => candidate.kind === "lookAtRotation");
 
         if (track?.kind === "lookAtRotation") {
           track.interpolation = interpolation;
-          track.keyframes = values.map((value, index) => ({ time: times[index] ?? 0, value }));
+          track.keyframes = createVec4Keyframes(input.values, output.values);
         }
       }
     }
@@ -406,12 +437,11 @@ function importVrmaFromAsset(asset: ParsedGltfAsset, fileName: string): VrmaDocu
       const bone = nodeToBone.get(channel.target.node);
 
       if (bone === "hips") {
-        const values = groupValues(output.values, 3) as Vec3[];
         const track = tracks.find((candidate) => candidate.kind === "hipsTranslation");
 
         if (track?.kind === "hipsTranslation") {
           track.interpolation = interpolation;
-          track.keyframes = values.map((value, index) => ({ time: times[index] ?? 0, value }));
+          track.keyframes = createVec3Keyframes(input.values, output.values);
         }
 
         continue;
@@ -422,7 +452,6 @@ function importVrmaFromAsset(asset: ParsedGltfAsset, fileName: string): VrmaDocu
         nodeToCustomExpression.get(channel.target.node);
 
       if (expressionName) {
-        const values = groupValues(output.values, 3);
         const track = tracks.find(
           (candidate) =>
             candidate.kind === "expression" && candidate.expressionName === expressionName,
@@ -430,10 +459,7 @@ function importVrmaFromAsset(asset: ParsedGltfAsset, fileName: string): VrmaDocu
 
         if (track?.kind === "expression") {
           track.interpolation = interpolation;
-          track.keyframes = values.map((value, index) => ({
-            time: times[index] ?? 0,
-            value: value[0] ?? 0,
-          }));
+          track.keyframes = createExpressionKeyframes(input.values, output.values);
         }
       }
     }

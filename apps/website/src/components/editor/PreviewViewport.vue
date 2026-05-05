@@ -52,7 +52,6 @@ watch(
   (pose) => {
     controller?.applyPose(pose);
   },
-  { deep: true },
 );
 </script>
 

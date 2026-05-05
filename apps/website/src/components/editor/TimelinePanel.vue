@@ -9,6 +9,7 @@ import { getVrmaExportFileName } from "../../domain/vrma/io";
 import { useAnimationEditorStore } from "../../stores/animation-editor";
 
 const editorStore = useAnimationEditorStore();
+const MAX_KEY_DOTS_PER_ROW = 100;
 const MIN_VISIBLE_TRACK_ROWS = 7;
 const MIN_TIMELINE_ZOOM = 1;
 const MAX_TIMELINE_ZOOM = 4;
@@ -34,24 +35,71 @@ const activeKeyDrag = ref<{
   trackId: string;
 } | null>(null);
 
+type TimelineKeyframe = (typeof editorStore.document.tracks)[number]["keyframes"][number];
+
+interface TimelineRow {
+  displayKeyframes: Array<{ keyframe: TimelineKeyframe; keyframeIndex: number }>;
+  empty: boolean;
+  id: string;
+  keyframes: TimelineKeyframe[];
+  label: string;
+  type: string;
+}
+
+function getDisplayKeyframes(row: Pick<TimelineRow, "id" | "keyframes">) {
+  if (row.keyframes.length <= MAX_KEY_DOTS_PER_ROW) {
+    return row.keyframes.map((keyframe, keyframeIndex) => ({ keyframe, keyframeIndex }));
+  }
+
+  const indexes = new Set<number>();
+  const stride = Math.ceil(row.keyframes.length / MAX_KEY_DOTS_PER_ROW);
+
+  for (let index = 0; index < row.keyframes.length; index += stride) {
+    indexes.add(index);
+  }
+
+  indexes.add(0);
+  indexes.add(row.keyframes.length - 1);
+
+  if (row.id === editorStore.selectedTrackId) {
+    indexes.add(editorStore.selectedKeyframeIndex);
+  }
+
+  return [...indexes]
+    .sort((left, right) => left - right)
+    .map((keyframeIndex) => ({
+      keyframe: row.keyframes[keyframeIndex]!,
+      keyframeIndex,
+    }));
+}
+
 const timelineRows = computed(() => {
-  const trackRows = editorStore.document.tracks.map((track) => ({
-    empty: false,
-    id: track.id,
-    keyframes: track.keyframes,
-    label:
-      track.kind === "boneRotation"
-        ? getHumanBoneLabelJa(track.bone)
-        : track.kind === "expression"
-          ? track.expressionName
-          : track.kind === "hipsTranslation"
-            ? "hips"
-            : "lookAt",
-    type: track.kind,
-  }));
+  const trackRows: TimelineRow[] = editorStore.document.tracks.map((track) => {
+    const row = {
+      displayKeyframes: [],
+      empty: false,
+      id: track.id,
+      keyframes: track.keyframes,
+      label:
+        track.kind === "boneRotation"
+          ? getHumanBoneLabelJa(track.bone)
+          : track.kind === "expression"
+            ? track.expressionName
+            : track.kind === "hipsTranslation"
+              ? "hips"
+              : "lookAt",
+      type: track.kind,
+    } satisfies TimelineRow;
+
+    return {
+      ...row,
+      displayKeyframes: getDisplayKeyframes(row),
+    };
+  });
   const emptyRows = Array.from(
     { length: Math.max(0, MIN_VISIBLE_TRACK_ROWS - trackRows.length) },
     (_, index) => ({
+      displayKeyframes: [],
       empty: true,
       id: `empty-${index}`,
       keyframes: [],
@@ -525,22 +573,24 @@ onBeforeUnmount(() => {
             @pointerdown="startRowScrub"
           >
             <button
-              v-for="(keyframe, index) in row.keyframes"
-              :key="`${row.id}-${index}-${keyframe.time}`"
+              v-for="displayKeyframe in row.displayKeyframes"
+              :key="`${row.id}-${displayKeyframe.keyframeIndex}-${displayKeyframe.keyframe.time}`"
               type="button"
               class="key-dot"
               :class="{
                 active:
                   row.id === editorStore.selectedTrackId &&
-                  index === editorStore.selectedKeyframeIndex,
+                  displayKeyframe.keyframeIndex === editorStore.selectedKeyframeIndex,
               }"
               :style="{
-                left: `${positionPercent(keyframe.time)}%`,
+                left: `${positionPercent(displayKeyframe.keyframe.time)}%`,
               }"
-              :title="`${keyframe.time.toFixed(3)}s`"
-              @click.stop="selectKey(row.id, index, keyframe.time)"
-              @contextmenu.stop="openKeyMenu($event, row.id, index)"
-              @pointerdown.stop="startKeyDrag($event, row.id, index)"
+              :title="`${displayKeyframe.keyframe.time.toFixed(3)}s`"
+              @click.stop="
+                selectKey(row.id, displayKeyframe.keyframeIndex, displayKeyframe.keyframe.time)
+              "
+              @contextmenu.stop="openKeyMenu($event, row.id, displayKeyframe.keyframeIndex)"
+              @pointerdown.stop="startKeyDrag($event, row.id, displayKeyframe.keyframeIndex)"
             />
           </div>
         </div>

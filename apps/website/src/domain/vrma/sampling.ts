@@ -24,12 +24,29 @@ function normalizeQuaternion([x, y, z, w]: Vec4): Vec4 {
   return [x / length, y / length, z / length, w / length];
 }
 
+function findNextKeyframeIndex(keyframes: Array<{ time: number }>, time: number) {
+  let low = 0;
+  let high = keyframes.length;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+
+    if (keyframes[middle]!.time >= time) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+
+  return low === keyframes.length ? -1 : low;
+}
+
 function sampleScalar(keyframes: ScalarKeyframe[], time: number, interpolation: Interpolation) {
   if (keyframes.length === 0) {
     return 0;
   }
 
-  const nextIndex = keyframes.findIndex((keyframe) => keyframe.time >= time);
+  const nextIndex = findNextKeyframeIndex(keyframes, time);
 
   if (nextIndex <= 0) {
     return keyframes[0]?.value ?? 0;
@@ -55,7 +72,7 @@ function sampleVec3(keyframes: Vec3Keyframe[], time: number, interpolation: Inte
     return [0, 0, 0];
   }
 
-  const nextIndex = keyframes.findIndex((keyframe) => keyframe.time >= time);
+  const nextIndex = findNextKeyframeIndex(keyframes, time);
 
   if (nextIndex <= 0) {
     return [...(keyframes[0]?.value ?? [0, 0, 0])] as Vec3;
@@ -81,7 +98,7 @@ function sampleVec4(keyframes: Vec4Keyframe[], time: number, interpolation: Inte
     return [0, 0, 0, 1];
   }
 
-  const nextIndex = keyframes.findIndex((keyframe) => keyframe.time >= time);
+  const nextIndex = findNextKeyframeIndex(keyframes, time);
 
   if (nextIndex <= 0) {
     return normalizeQuaternion([...(keyframes[0]?.value ?? [0, 0, 0, 1])] as Vec4);
