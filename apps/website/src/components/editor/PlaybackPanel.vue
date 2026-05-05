@@ -2,6 +2,13 @@
 import { useAnimationEditorStore } from "../../stores/animation-editor";
 
 const editorStore = useAnimationEditorStore();
+
+function numberInputValue(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const nextValue = Number(input.value);
+
+  return Number.isFinite(nextValue) ? nextValue : editorStore.document.duration;
+}
 </script>
 
 <template>
@@ -41,6 +48,19 @@ const editorStore = useAnimationEditorStore();
           {{ editorStore.selectedTrack?.kind ?? "None" }}
         </el-descriptions-item>
       </el-descriptions>
+
+      <label class="duration-control">
+        <span>Duration</span>
+        <input
+          class="duration-input"
+          :value="editorStore.document.duration.toFixed(1)"
+          min="0.1"
+          step="0.1"
+          type="number"
+          @change="(event) => editorStore.updateDurationValue(numberInputValue(event))"
+        />
+        <small>seconds</small>
+      </label>
     </el-space>
   </el-card>
 </template>
@@ -65,5 +85,36 @@ const editorStore = useAnimationEditorStore();
 
 .transport-row {
   justify-content: flex-start;
+}
+
+.duration-control {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto 92px auto;
+  justify-content: start;
+}
+
+.duration-control span,
+.duration-control small {
+  color: var(--el-text-color-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.duration-input {
+  background: var(--el-fill-color-blank);
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  color: var(--el-text-color-primary);
+  font: inherit;
+  height: 32px;
+  padding: 0 8px;
+  width: 100%;
+}
+
+.duration-input:focus {
+  border-color: var(--el-color-primary);
+  outline: none;
 }
 </style>
