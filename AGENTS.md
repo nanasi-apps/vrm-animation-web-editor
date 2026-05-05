@@ -13,3 +13,5 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - [ ] Check if there are `vite.config.ts` tasks or `package.json` scripts necessary for validation, run via `vp run <script>`.
 
 <!--VITE PLUS END-->
+
+do not test playwright.
