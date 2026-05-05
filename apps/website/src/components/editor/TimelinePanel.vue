@@ -6,11 +6,12 @@ import {
   PRESET_EXPRESSION_NAMES,
 } from "../../domain/vrma/constants";
 import { getVrmaExportFileName } from "../../domain/vrma/io";
+import type { Interpolation } from "../../domain/vrma/types";
 import { useAnimationEditorStore } from "../../stores/animation-editor";
 
 const editorStore = useAnimationEditorStore();
-const MAX_KEY_DOTS_PER_ROW = 1000;
-const SIMILAR_KEYFRAME_VALUE_EPSILON = 0.08;
+const LINEAR_KEYFRAME_VALUE_EPSILON = 0.01;
+const MAX_KEY_DOTS_PER_ROW = 150;
 const MIN_VISIBLE_TRACK_ROWS = 7;
 const MIN_TIMELINE_ZOOM = 1;
 const MAX_TIMELINE_ZOOM = 4;
@@ -29,6 +30,8 @@ const contextMenu = ref<
   | {
       kind: "key";
       keyframeIndex: number;
+      keyframeIndexEnd: number;
+      keyframeIndexStart: number;
       trackId: string;
       x: number;
       y: number;
@@ -46,12 +49,15 @@ type DisplayKeyframe = {
   keyframe: TimelineKeyframe;
   keyframeCount: number;
   keyframeIndex: number;
+  keyframeIndexEnd: number;
+  keyframeIndexStart: number;
 };
 
 interface TimelineRow {
   displayKeyframes: DisplayKeyframe[];
   empty: boolean;
   id: string;
+  interpolation: Interpolation;
   keyframes: TimelineKeyframe[];
   label: string;
   type: string;
@@ -66,57 +72,114 @@ function getKeyframeValues(keyframe: TimelineKeyframe) {
   return Array.isArray(keyframe.value) ? keyframe.value : [keyframe.value];
 }
 
-function getKeyframeValueDelta(left: TimelineKeyframe, right: TimelineKeyframe) {
-  const leftValues = getKeyframeValues(left);
-  const rightValues = getKeyframeValues(right);
-  const valueCount = Math.min(leftValues.length, rightValues.length);
-  let largestDelta = 0;
+function isKeyframeOnLine(
+  previous: TimelineKeyframe,
+  current: TimelineKeyframe,
+  next: TimelineKeyframe,
+) {
+  const duration = next.time - previous.time;
 
-  for (let index = 0; index < valueCount; index += 1) {
-    largestDelta = Math.max(
-      largestDelta,
-      Math.abs((leftValues[index] ?? 0) - (rightValues[index] ?? 0)),
-    );
+  if (duration <= 0) {
+    return false;
   }
 
-  return largestDelta;
+  const alpha = (current.time - previous.time) / duration;
+
+  if (alpha <= 0 || alpha >= 1) {
+    return false;
+  }
+
+  const previousValues = getKeyframeValues(previous);
+  const currentValues = getKeyframeValues(current);
+  const nextValues = getKeyframeValues(next);
+  const valueCount = Math.min(previousValues.length, currentValues.length, nextValues.length);
+
+  for (let index = 0; index < valueCount; index += 1) {
+    const expected =
+      (previousValues[index] ?? 0) +
+      ((nextValues[index] ?? 0) - (previousValues[index] ?? 0)) * alpha;
+
+    if (Math.abs((currentValues[index] ?? 0) - expected) > LINEAR_KEYFRAME_VALUE_EPSILON) {
+      return false;
+    }
+  }
+
+  return valueCount > 0;
 }
 
-function getValueClusteredKeyframes(keyframes: TimelineKeyframe[]) {
-  const displayKeyframes: DisplayKeyframe[] = [];
-  let currentCluster: DisplayKeyframe | null = null;
-
-  for (const [keyframeIndex, keyframe] of keyframes.entries()) {
-    if (
-      currentCluster &&
-      getKeyframeValueDelta(currentCluster.keyframe, keyframe) <= SIMILAR_KEYFRAME_VALUE_EPSILON
-    ) {
-      currentCluster.keyframeCount += 1;
-      continue;
-    }
-
-    currentCluster = {
+function getLineSimplifiedKeyframes(row: Pick<TimelineRow, "interpolation" | "keyframes">) {
+  if (row.interpolation === "STEP" || row.keyframes.length <= 2) {
+    return row.keyframes.map((keyframe, keyframeIndex) => ({
       keyframe,
       keyframeCount: 1,
       keyframeIndex,
-    };
-    displayKeyframes.push(currentCluster);
+      keyframeIndexEnd: keyframeIndex,
+      keyframeIndexStart: keyframeIndex,
+    }));
   }
+
+  const displayKeyframes: DisplayKeyframe[] = [
+    {
+      keyframe: row.keyframes[0]!,
+      keyframeCount: 1,
+      keyframeIndex: 0,
+      keyframeIndexEnd: 0,
+      keyframeIndexStart: 0,
+    },
+  ];
+  let candidateIndex = 1;
+  let hiddenKeyframeCount = 0;
+
+  for (let nextIndex = 2; nextIndex < row.keyframes.length; nextIndex += 1) {
+    const previousDisplayKeyframe = displayKeyframes.at(-1)!;
+    const candidate = row.keyframes[candidateIndex]!;
+    const next = row.keyframes[nextIndex]!;
+
+    if (isKeyframeOnLine(previousDisplayKeyframe.keyframe, candidate, next)) {
+      hiddenKeyframeCount += 1;
+      candidateIndex = nextIndex;
+      continue;
+    }
+
+    displayKeyframes.push({
+      keyframe: candidate,
+      keyframeCount: hiddenKeyframeCount + 1,
+      keyframeIndex: candidateIndex,
+      keyframeIndexEnd: candidateIndex,
+      keyframeIndexStart: candidateIndex - hiddenKeyframeCount,
+    });
+    candidateIndex = nextIndex;
+    hiddenKeyframeCount = 0;
+  }
+
+  displayKeyframes.push({
+    keyframe: row.keyframes[candidateIndex]!,
+    keyframeCount: hiddenKeyframeCount + 1,
+    keyframeIndex: candidateIndex,
+    keyframeIndexEnd: candidateIndex,
+    keyframeIndexStart: candidateIndex - hiddenKeyframeCount,
+  });
 
   return displayKeyframes;
 }
 
-function getDisplayKeyframes(row: Pick<TimelineRow, "id" | "keyframes">) {
+function getDisplayKeyframes(row: Pick<TimelineRow, "id" | "interpolation" | "keyframes">) {
   const maxKeyDots = Math.max(1, Math.floor(MAX_KEY_DOTS_PER_ROW * timelineZoom.value));
   const buckets = new Map<number, DisplayKeyframe>();
 
-  for (const displayKeyframe of getValueClusteredKeyframes(row.keyframes)) {
-    const { keyframe, keyframeCount, keyframeIndex } = displayKeyframe;
+  for (const displayKeyframe of getLineSimplifiedKeyframes(row)) {
+    const { keyframe, keyframeCount, keyframeIndex, keyframeIndexEnd, keyframeIndexStart } =
+      displayKeyframe;
     const bucketIndex = Math.floor((positionPercent(keyframe.time) / 100) * (maxKeyDots - 1));
     const existingBucket = buckets.get(bucketIndex);
 
     if (existingBucket) {
       existingBucket.keyframeCount += keyframeCount;
+      existingBucket.keyframeIndexEnd = Math.max(existingBucket.keyframeIndexEnd, keyframeIndexEnd);
+      existingBucket.keyframeIndexStart = Math.min(
+        existingBucket.keyframeIndexStart,
+        keyframeIndexStart,
+      );
       continue;
     }
 
@@ -124,14 +187,24 @@ function getDisplayKeyframes(row: Pick<TimelineRow, "id" | "keyframes">) {
       keyframe,
       keyframeCount,
       keyframeIndex,
+      keyframeIndexEnd,
+      keyframeIndexStart,
     });
   }
 
-  buckets.set(-1, { keyframe: row.keyframes[0]!, keyframeCount: 1, keyframeIndex: 0 });
+  buckets.set(-1, {
+    keyframe: row.keyframes[0]!,
+    keyframeCount: 1,
+    keyframeIndex: 0,
+    keyframeIndexEnd: 0,
+    keyframeIndexStart: 0,
+  });
   buckets.set(maxKeyDots, {
     keyframe: row.keyframes[row.keyframes.length - 1]!,
     keyframeCount: 1,
     keyframeIndex: row.keyframes.length - 1,
+    keyframeIndexEnd: row.keyframes.length - 1,
+    keyframeIndexStart: row.keyframes.length - 1,
   });
 
   if (row.id === editorStore.selectedTrackId) {
@@ -142,6 +215,8 @@ function getDisplayKeyframes(row: Pick<TimelineRow, "id" | "keyframes">) {
         keyframe: selectedKeyframe,
         keyframeCount: 1,
         keyframeIndex: editorStore.selectedKeyframeIndex,
+        keyframeIndexEnd: editorStore.selectedKeyframeIndex,
+        keyframeIndexStart: editorStore.selectedKeyframeIndex,
       });
     }
   }
@@ -166,6 +241,7 @@ const timelineRows = computed(() => {
       displayKeyframes: [],
       empty: false,
       id: track.id,
+      interpolation: track.interpolation,
       keyframes: track.keyframes,
       label:
         track.kind === "boneRotation"
@@ -189,6 +265,7 @@ const timelineRows = computed(() => {
       displayKeyframes: [],
       empty: true,
       id: `empty-${index}`,
+      interpolation: "LINEAR" as const,
       keyframes: [],
       label: "",
       type: "",
@@ -474,11 +551,13 @@ function openTrackMenu(event: MouseEvent, trackId: string) {
   };
 }
 
-function openKeyMenu(event: MouseEvent, trackId: string, keyframeIndex: number) {
+function openKeyMenu(event: MouseEvent, trackId: string, displayKeyframe: DisplayKeyframe) {
   event.preventDefault();
   contextMenu.value = {
     kind: "key",
-    keyframeIndex,
+    keyframeIndex: displayKeyframe.keyframeIndex,
+    keyframeIndexEnd: displayKeyframe.keyframeIndexEnd,
+    keyframeIndexStart: displayKeyframe.keyframeIndexStart,
     trackId,
     x: event.clientX,
     y: event.clientY,
@@ -513,7 +592,11 @@ function deleteContextKey() {
     return;
   }
 
-  editorStore.removeKeyframe(contextMenu.value.trackId, contextMenu.value.keyframeIndex);
+  editorStore.removeKeyframeRange(
+    contextMenu.value.trackId,
+    contextMenu.value.keyframeIndexStart,
+    contextMenu.value.keyframeIndexEnd,
+  );
   closeMenus();
 }
 
@@ -738,25 +821,16 @@ onBeforeUnmount(() => {
                   :key="`${virtualRow.row.id}-${displayKeyframe.keyframeIndex}-${displayKeyframe.keyframe.time}`"
                   type="button"
                   class="key-dot"
-                  :aria-label="
-                    displayKeyframe.keyframeCount > 1
-                      ? `${displayKeyframe.keyframeCount} keyframes around ${displayKeyframe.keyframe.time.toFixed(3)}s`
-                      : `Keyframe at ${displayKeyframe.keyframe.time.toFixed(3)}s`
-                  "
+                  :aria-label="`Keyframe at ${displayKeyframe.keyframe.time.toFixed(3)}s`"
                   :class="{
                     active:
                       virtualRow.row.id === editorStore.selectedTrackId &&
                       displayKeyframe.keyframeIndex === editorStore.selectedKeyframeIndex,
-                    clustered: displayKeyframe.keyframeCount > 1,
                   }"
                   :style="{
                     left: `${positionPercent(displayKeyframe.keyframe.time)}%`,
                   }"
-                  :title="
-                    displayKeyframe.keyframeCount > 1
-                      ? `${displayKeyframe.keyframe.time.toFixed(3)}s (${displayKeyframe.keyframeCount} keys)`
-                      : `${displayKeyframe.keyframe.time.toFixed(3)}s`
-                  "
+                  :title="`${displayKeyframe.keyframe.time.toFixed(3)}s`"
                   @click.stop="
                     selectKey(
                       virtualRow.row.id,
@@ -764,9 +838,7 @@ onBeforeUnmount(() => {
                       displayKeyframe.keyframe.time,
                     )
                   "
-                  @contextmenu.stop="
-                    openKeyMenu($event, virtualRow.row.id, displayKeyframe.keyframeIndex)
-                  "
+                  @contextmenu.stop="openKeyMenu($event, virtualRow.row.id, displayKeyframe)"
                   @pointerdown.stop="
                     startKeyDrag($event, virtualRow.row.id, displayKeyframe.keyframeIndex)
                   "
@@ -1006,11 +1078,6 @@ onBeforeUnmount(() => {
 .key-dot.active {
   background: var(--el-color-primary);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--el-color-primary) 22%, transparent);
-}
-
-.key-dot.clustered {
-  border-color: rgba(40, 24, 0, 0.5);
-  box-shadow: 0 0 0 3px rgba(240, 193, 75, 0.18);
 }
 
 .add-track-menu,

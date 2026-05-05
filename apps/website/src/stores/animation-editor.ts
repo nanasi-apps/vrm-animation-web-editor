@@ -294,6 +294,27 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
     selectedKeyframeIndex.value = track.keyframes.length - 1;
   }
 
+  function selectRemainingKeyframe(trackId: string, deletedKeyframeIndex: number) {
+    const track = document.value.tracks.find((candidate) => candidate.id === trackId);
+
+    if (!track) {
+      selectedTrackId.value = document.value.tracks[0]?.id ?? null;
+      selectedKeyframeIndex.value = 0;
+      currentTime.value = 0;
+      return;
+    }
+
+    const nextIndex = Math.min(deletedKeyframeIndex, track.keyframes.length - 1);
+    const nextKeyframe = track.keyframes[nextIndex];
+
+    selectedTrackId.value = trackId;
+    selectedKeyframeIndex.value = nextIndex;
+
+    if (nextKeyframe) {
+      currentTime.value = Math.min(document.value.duration, nextKeyframe.time);
+    }
+  }
+
   function removeSelectedKeyframe() {
     const track = selectedTrack.value;
 
@@ -303,7 +324,7 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
 
     track.keyframes.splice(selectedKeyframeIndex.value, 1);
     document.value = upsertTrack(document.value, { ...track });
-    selectedKeyframeIndex.value = Math.max(0, selectedKeyframeIndex.value - 1);
+    selectRemainingKeyframe(track.id, selectedKeyframeIndex.value);
   }
 
   function addKeyframeToTrack(trackId: string, time: number) {
@@ -321,8 +342,27 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
 
     track.keyframes.splice(keyframeIndex, 1);
     document.value = upsertTrack(document.value, { ...track });
-    selectedTrackId.value = trackId;
-    selectedKeyframeIndex.value = Math.min(keyframeIndex, track.keyframes.length - 1);
+    selectRemainingKeyframe(trackId, keyframeIndex);
+  }
+
+  function removeKeyframeRange(
+    trackId: string,
+    keyframeIndexStart: number,
+    keyframeIndexEnd: number,
+  ) {
+    const track = document.value.tracks.find((candidate) => candidate.id === trackId);
+
+    if (!track || track.keyframes.length <= 1) {
+      return;
+    }
+
+    const startIndex = Math.max(0, Math.min(keyframeIndexStart, track.keyframes.length - 1));
+    const endIndex = Math.max(startIndex, Math.min(keyframeIndexEnd, track.keyframes.length - 1));
+    const deleteCount = Math.min(endIndex - startIndex + 1, track.keyframes.length - 1);
+
+    track.keyframes.splice(startIndex, deleteCount);
+    document.value = upsertTrack(document.value, { ...track });
+    selectRemainingKeyframe(trackId, startIndex);
   }
 
   function copyKeyframe(trackId: string, keyframeIndex: number) {
@@ -598,6 +638,7 @@ export const useAnimationEditorStore = defineStore("animation-editor", () => {
     removeSelectedKeyframe,
     removeSelectedTrack,
     removeKeyframe,
+    removeKeyframeRange,
     removeTrack,
     sampledPose,
     selectTrack,
