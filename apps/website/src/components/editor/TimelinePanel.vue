@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   getHumanBoneLabelJa,
   HUMAN_BONE_NAMES,
@@ -10,8 +10,12 @@ import { useAnimationEditorStore } from "../../stores/animation-editor";
 
 const editorStore = useAnimationEditorStore();
 const MIN_VISIBLE_TRACK_ROWS = 7;
+const MIN_TIMELINE_ZOOM = 1;
+const MAX_TIMELINE_ZOOM = 4;
 const activeScrubLane = ref<HTMLElement | null>(null);
 const addTrackMenuOpen = ref(false);
+const timelineScrollLeft = ref(0);
+const timelineZoom = ref(1);
 const contextMenu = ref<
   | { kind: "timeline"; trackId: string; time: number; x: number; y: number }
   | { kind: "track"; trackId: string; x: number; y: number }
@@ -65,6 +69,14 @@ const playheadPercent = computed(() => {
   }
 
   return (editorStore.currentTime / editorStore.document.duration) * 100;
+});
+
+const timelineWidth = computed(() => `${timelineZoom.value * 100}%`);
+const rulerOffset = computed(() => `translateX(-${timelineScrollLeft.value}px)`);
+const trackPlayheadLeft = computed(() => {
+  const ratio = playheadPercent.value / 100;
+
+  return `calc(${150 * (1 - ratio)}px + ${timelineZoom.value * ratio * 100}% - ${timelineScrollLeft.value}px)`;
 });
 
 const availableBones = computed(() =>
@@ -193,6 +205,40 @@ function startKeyDrag(event: PointerEvent, trackId: string, keyframeIndex: numbe
   window.addEventListener("pointerup", stopKeyDrag, { once: true });
 }
 
+function handleTimelineScroll(event: Event) {
+  timelineScrollLeft.value = (event.currentTarget as HTMLElement).scrollLeft;
+}
+
+function handleTimelineWheel(event: WheelEvent) {
+  const scrollArea = event.currentTarget as HTMLElement;
+
+  event.preventDefault();
+
+  if (!event.altKey) {
+    scrollArea.scrollLeft += event.deltaX || event.deltaY;
+    return;
+  }
+
+  const previousZoom = timelineZoom.value;
+  const nextZoom = Math.min(
+    MAX_TIMELINE_ZOOM,
+    Math.max(MIN_TIMELINE_ZOOM, Number((timelineZoom.value - event.deltaY * 0.002).toFixed(2))),
+  );
+
+  if (nextZoom === previousZoom) {
+    return;
+  }
+
+  const bounds = scrollArea.getBoundingClientRect();
+  const pointerX = event.clientX - bounds.left;
+  const timelineX = scrollArea.scrollLeft + pointerX;
+  timelineZoom.value = nextZoom;
+  void nextTick(() => {
+    scrollArea.scrollLeft = (timelineX / previousZoom) * nextZoom - pointerX;
+    timelineScrollLeft.value = scrollArea.scrollLeft;
+  });
+}
+
 function openTimelineMenu(event: MouseEvent, trackId: string) {
   event.preventDefault();
   const lane = event.currentTarget as HTMLElement;
@@ -272,6 +318,67 @@ function deleteContextKey() {
   closeMenus();
 }
 
+function copyContextKey() {
+  if (!contextMenu.value || contextMenu.value.kind !== "key") {
+    return;
+  }
+
+  editorStore.copyKeyframe(contextMenu.value.trackId, contextMenu.value.keyframeIndex);
+  closeMenus();
+}
+
+function pasteContextKey() {
+  if (!contextMenu.value || contextMenu.value.kind !== "timeline") {
+    return;
+  }
+
+  editorStore.pasteKeyframeToTrack(contextMenu.value.trackId, contextMenu.value.time);
+  closeMenus();
+}
+
+function isEditingText(event: KeyboardEvent) {
+  const target = event.target;
+
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  );
+}
+
+function handleKeyShortcut(event: KeyboardEvent) {
+  if (
+    (!event.ctrlKey && !event.metaKey) ||
+    event.altKey ||
+    event.shiftKey ||
+    isEditingText(event)
+  ) {
+    return;
+  }
+
+  const key = event.key.toLowerCase();
+
+  if (key === "c" && editorStore.selectedKeyframe) {
+    event.preventDefault();
+    editorStore.copySelectedKeyframe();
+    return;
+  }
+
+  if (
+    key === "v" &&
+    editorStore.selectedTrack &&
+    editorStore.canPasteKeyframeToTrack(editorStore.selectedTrack.id)
+  ) {
+    event.preventDefault();
+    editorStore.pasteSelectedKeyframeAtCurrentTime();
+  }
+}
+
 function addTrack(type: "hips" | "lookAt" | "bone" | "expression", name?: string) {
   if (type === "hips") {
     editorStore.addHipsTranslationTrack();
@@ -286,9 +393,14 @@ function addTrack(type: "hips" | "lookAt" | "bone" | "expression", name?: string
   addTrackMenuOpen.value = false;
 }
 
+onMounted(() => {
+  window.addEventListener("keydown", handleKeyShortcut);
+});
+
 onBeforeUnmount(() => {
   stopScrub();
   stopKeyDrag();
+  window.removeEventListener("keydown", handleKeyShortcut);
 });
 </script>
 
@@ -308,6 +420,21 @@ onBeforeUnmount(() => {
           {{ editorStore.isPlaying ? "Pause" : "Play" }}
         </el-button>
         <el-button size="small" @click="editorStore.addKeyframe">Add Key</el-button>
+        <el-button
+          size="small"
+          :disabled="!editorStore.selectedKeyframe"
+          @click="editorStore.copySelectedKeyframe"
+          >Copy Key</el-button
+        >
+        <el-button
+          size="small"
+          :disabled="
+            !editorStore.selectedTrack ||
+            !editorStore.canPasteKeyframeToTrack(editorStore.selectedTrack.id)
+          "
+          @click="editorStore.pasteSelectedKeyframeAtCurrentTime"
+          >Paste Key</el-button
+        >
         <el-button size="small" @click.stop="addTrackMenuOpen = !addTrackMenuOpen"
           >Add Track</el-button
         >
@@ -353,28 +480,30 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="time-ruler">
-      <button
-        v-for="mark in [0, 0.25, 0.5, 0.75, 1]"
-        :key="mark"
-        type="button"
-        class="ruler-mark"
-        :style="{ left: `${mark * 100}%` }"
-        @click="editorStore.setCurrentTime(editorStore.document.duration * mark)"
-      >
-        {{ (editorStore.document.duration * mark).toFixed(1) }}s
-      </button>
-      <div class="playhead" :style="{ left: `${playheadPercent}%` }" />
+      <div class="ruler-track" :style="{ transform: rulerOffset, width: timelineWidth }">
+        <button
+          v-for="mark in [0, 0.25, 0.5, 0.75, 1]"
+          :key="mark"
+          type="button"
+          class="ruler-mark"
+          :style="{ left: `${mark * 100}%` }"
+          @click="editorStore.setCurrentTime(editorStore.document.duration * mark)"
+        >
+          {{ (editorStore.document.duration * mark).toFixed(1) }}s
+        </button>
+        <div class="playhead" :style="{ left: `${playheadPercent}%` }" />
+      </div>
     </div>
 
     <div class="timeline-body">
-      <div
-        class="track-playhead"
-        :style="{
-          left: `calc(150px + (100% - 150px) * ${playheadPercent / 100})`,
-        }"
-      />
-      <div class="timeline-scroll">
-        <div v-for="row in timelineRows" :key="row.id" class="track-row">
+      <div class="track-playhead" :style="{ left: trackPlayheadLeft }" />
+      <div class="timeline-scroll" @scroll="handleTimelineScroll" @wheel="handleTimelineWheel">
+        <div
+          v-for="row in timelineRows"
+          :key="row.id"
+          class="track-row"
+          :style="{ width: timelineWidth }"
+        >
           <button
             type="button"
             class="track-label"
@@ -427,8 +556,19 @@ onBeforeUnmount(() => {
       <button v-if="contextMenu.kind === 'timeline'" type="button" @click="addTimelineKey">
         Add Key
       </button>
+      <button
+        v-if="contextMenu.kind === 'timeline'"
+        type="button"
+        :disabled="!editorStore.canPasteKeyframeToTrack(contextMenu.trackId)"
+        @click="pasteContextKey"
+      >
+        Paste Key
+      </button>
       <button v-if="contextMenu.kind === 'track'" type="button" @click="deleteContextTrack">
         Delete Track
+      </button>
+      <button v-if="contextMenu.kind === 'key'" type="button" @click="copyContextKey">
+        Copy Key
       </button>
       <button v-if="contextMenu.kind === 'key'" type="button" @click="deleteContextKey">
         Delete Key
@@ -477,6 +617,12 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--el-border-color);
   height: 28px;
   margin-left: 150px;
+  overflow: hidden;
+  position: relative;
+}
+
+.ruler-track {
+  height: 100%;
   position: relative;
 }
 
@@ -530,10 +676,11 @@ onBeforeUnmount(() => {
 
 .timeline-scroll {
   display: grid;
+  grid-auto-rows: minmax(46px, 1fr);
   grid-template-rows: repeat(7, minmax(46px, 1fr));
   height: 100%;
   max-height: none;
-  overflow: hidden;
+  overflow: auto;
   padding-right: 4px;
 }
 
@@ -543,7 +690,6 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0;
   grid-template-columns: 150px minmax(0, 1fr);
-  height: 100%;
   min-height: 46px;
 }
 
@@ -562,7 +708,10 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
   padding: 7px 10px;
+  position: sticky;
+  left: 0;
   text-align: left;
+  z-index: 3;
 }
 
 .track-label.active {
@@ -656,9 +805,14 @@ onBeforeUnmount(() => {
   background: var(--el-fill-color-light);
 }
 
-.add-track-menu button:disabled {
+.add-track-menu button:disabled,
+.context-menu button:disabled {
   color: var(--el-text-color-disabled);
   cursor: not-allowed;
+}
+
+.context-menu button:disabled:hover {
+  background: transparent;
 }
 
 .menu-group-label {

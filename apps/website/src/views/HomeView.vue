@@ -72,7 +72,7 @@ import TimelinePanel from "../components/editor/TimelinePanel.vue";
 }
 
 .stage-column {
-  grid-template-rows: 480px minmax(0, 1fr);
+  grid-template-rows: minmax(460px, 3fr) minmax(230px, 1fr);
   min-width: 0;
   overflow: hidden;
 }
