@@ -17,6 +17,7 @@ import { validateDocument } from "./validation";
 
 interface AccessorLike {
   bufferView: number;
+  byteOffset?: number;
   componentType: number;
   count: number;
   max?: number[];
@@ -38,7 +39,12 @@ interface GltfLike {
     }>;
   }>;
   asset?: { generator?: string; version?: string };
-  bufferViews?: Array<{ buffer: number; byteLength: number; byteOffset?: number }>;
+  bufferViews?: Array<{
+    buffer: number;
+    byteLength: number;
+    byteOffset?: number;
+    byteStride?: number;
+  }>;
   buffers?: Array<{ byteLength: number; uri?: string }>;
   extensions?: {
     VRMC_vrm_animation?: {
@@ -53,6 +59,17 @@ interface GltfLike {
   scene?: number;
   scenes?: Array<{ nodes: number[] }>;
 }
+
+interface ParsedGltfAsset {
+  binaryChunk?: Uint8Array;
+  gltf: GltfLike;
+}
+
+const GLB_MAGIC = 0x46546c67;
+const GLB_VERSION = 2;
+const GLB_JSON_CHUNK_TYPE = 0x4e4f534a;
+const GLB_BINARY_CHUNK_TYPE = 0x004e4942;
+const FLOAT32_BYTE_LENGTH = 4;
 
 function encodeBase64(bytes: Uint8Array) {
   let binary = "";
@@ -83,7 +100,28 @@ function readEmbeddedBuffer(uri?: string) {
   return decodeBase64(base64);
 }
 
-function readFloatAccessor(gltf: GltfLike, accessorIndex: number) {
+function getBufferBytes(asset: ParsedGltfAsset, bufferIndex: number) {
+  const buffer = asset.gltf.buffers?.[bufferIndex];
+
+  if (!buffer) {
+    throw new Error(`Buffer ${bufferIndex} was not found.`);
+  }
+
+  if (buffer.uri !== undefined) {
+    return readEmbeddedBuffer(buffer.uri);
+  }
+
+  if (bufferIndex === 0 && asset.binaryChunk) {
+    return asset.binaryChunk;
+  }
+
+  throw new Error(
+    "Only embedded data URI buffers or GLB binary chunks are supported in this editor.",
+  );
+}
+
+function readFloatAccessor(asset: ParsedGltfAsset, accessorIndex: number) {
+  const gltf = asset.gltf;
   const accessor = gltf.accessors?.[accessorIndex];
 
   if (!accessor) {
@@ -100,17 +138,32 @@ function readFloatAccessor(gltf: GltfLike, accessorIndex: number) {
     throw new Error(`Buffer view ${accessor.bufferView} was not found.`);
   }
 
-  const buffer = gltf.buffers?.[bufferView.buffer];
+  const bytes = getBufferBytes(asset, bufferView.buffer);
+  const componentCount = getComponentCount(accessor.type);
+  const elementByteLength = componentCount * FLOAT32_BYTE_LENGTH;
+  const byteStride = bufferView.byteStride ?? elementByteLength;
+  const byteOffset = (bufferView.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
 
-  if (!buffer) {
-    throw new Error(`Buffer ${bufferView.buffer} was not found.`);
+  if (byteStride < elementByteLength) {
+    throw new Error("The animation accessor byte stride is smaller than its element size.");
   }
 
-  const bytes = readEmbeddedBuffer(buffer.uri);
-  const byteOffset = bufferView.byteOffset ?? 0;
-  const values = new Float32Array(
-    bytes.buffer.slice(byteOffset, byteOffset + bufferView.byteLength),
-  );
+  const values = new Float32Array(accessor.count * componentCount);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  for (let elementIndex = 0; elementIndex < accessor.count; elementIndex += 1) {
+    const elementOffset = byteOffset + elementIndex * byteStride;
+
+    for (let componentIndex = 0; componentIndex < componentCount; componentIndex += 1) {
+      const valueOffset = elementOffset + componentIndex * FLOAT32_BYTE_LENGTH;
+
+      if (valueOffset + FLOAT32_BYTE_LENGTH > view.byteLength) {
+        throw new Error(`Accessor ${accessorIndex} reads outside of its buffer view.`);
+      }
+
+      values[elementIndex * componentCount + componentIndex] = view.getFloat32(valueOffset, true);
+    }
+  }
 
   return {
     count: accessor.count,
@@ -133,8 +186,125 @@ function normalizeInterpolation(value?: string): Interpolation {
   return value === "STEP" ? "STEP" : "LINEAR";
 }
 
+function parseGltfJson(text: string): GltfLike {
+  return JSON.parse(text) as GltfLike;
+}
+
+function parseGlb(bytes: ArrayBuffer): ParsedGltfAsset {
+  const view = new DataView(bytes);
+
+  if (view.byteLength < 20) {
+    throw new Error("The GLB file is too small to contain a glTF asset.");
+  }
+
+  if (view.getUint32(0, true) !== GLB_MAGIC) {
+    throw new Error("The GLB magic header was not found.");
+  }
+
+  if (view.getUint32(4, true) !== GLB_VERSION) {
+    throw new Error("Only binary glTF 2.0 files are supported.");
+  }
+
+  const declaredLength = view.getUint32(8, true);
+
+  if (declaredLength > view.byteLength) {
+    throw new Error("The GLB file length is larger than the provided data.");
+  }
+
+  let offset = 12;
+  let jsonText: string | undefined;
+  let binaryChunk: Uint8Array | undefined;
+
+  while (offset + 8 <= declaredLength) {
+    const chunkLength = view.getUint32(offset, true);
+    const chunkType = view.getUint32(offset + 4, true);
+    const chunkStart = offset + 8;
+    const chunkEnd = chunkStart + chunkLength;
+
+    if (chunkEnd > declaredLength) {
+      throw new Error("A GLB chunk extends beyond the file length.");
+    }
+
+    if (chunkType === GLB_JSON_CHUNK_TYPE) {
+      jsonText = new TextDecoder().decode(new Uint8Array(bytes, chunkStart, chunkLength)).trimEnd();
+    } else if (chunkType === GLB_BINARY_CHUNK_TYPE) {
+      binaryChunk = new Uint8Array(bytes, chunkStart, chunkLength);
+    }
+
+    offset = chunkEnd;
+  }
+
+  if (!jsonText) {
+    throw new Error("The GLB JSON chunk was not found.");
+  }
+
+  return {
+    binaryChunk,
+    gltf: parseGltfJson(jsonText),
+  };
+}
+
+function parseGltfAsset(bytes: ArrayBuffer): ParsedGltfAsset {
+  const view = new DataView(bytes);
+
+  if (view.byteLength >= 4 && view.getUint32(0, true) === GLB_MAGIC) {
+    return parseGlb(bytes);
+  }
+
+  return {
+    gltf: parseGltfJson(new TextDecoder().decode(bytes)),
+  };
+}
+
+function alignBytesToFour(bytes: Uint8Array, padding: number) {
+  const alignedLength = Math.ceil(bytes.byteLength / 4) * 4;
+  const aligned = new Uint8Array(alignedLength);
+  aligned.set(bytes);
+  aligned.fill(padding, bytes.byteLength);
+
+  return aligned;
+}
+
+function createGlb(gltf: GltfLike, binaryChunk: Uint8Array) {
+  const jsonChunk = alignBytesToFour(new TextEncoder().encode(JSON.stringify(gltf)), 0x20);
+  const binChunk = alignBytesToFour(binaryChunk, 0);
+  const totalLength = 12 + 8 + jsonChunk.byteLength + 8 + binChunk.byteLength;
+  const buffer = new ArrayBuffer(totalLength);
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+  let offset = 0;
+
+  view.setUint32(offset, GLB_MAGIC, true);
+  offset += 4;
+  view.setUint32(offset, GLB_VERSION, true);
+  offset += 4;
+  view.setUint32(offset, totalLength, true);
+  offset += 4;
+  view.setUint32(offset, jsonChunk.byteLength, true);
+  offset += 4;
+  view.setUint32(offset, GLB_JSON_CHUNK_TYPE, true);
+  offset += 4;
+  bytes.set(jsonChunk, offset);
+  offset += jsonChunk.byteLength;
+  view.setUint32(offset, binChunk.byteLength, true);
+  offset += 4;
+  view.setUint32(offset, GLB_BINARY_CHUNK_TYPE, true);
+  offset += 4;
+  bytes.set(binChunk, offset);
+
+  return buffer;
+}
+
 export function importVrmaFromText(text: string, fileName: string): VrmaDocument {
-  const gltf = JSON.parse(text) as GltfLike;
+  return importVrmaFromAsset({ gltf: parseGltfJson(text) }, fileName);
+}
+
+export function importVrmaFromArrayBuffer(buffer: ArrayBuffer, fileName: string): VrmaDocument {
+  return importVrmaFromAsset(parseGltfAsset(buffer), fileName);
+}
+
+function importVrmaFromAsset(asset: ParsedGltfAsset, fileName: string): VrmaDocument {
+  const gltf = asset.gltf;
   const extension = gltf.extensions?.VRMC_vrm_animation;
 
   if (!extension) {
@@ -199,8 +369,8 @@ export function importVrmaFromText(text: string, fileName: string): VrmaDocument
       continue;
     }
 
-    const input = readFloatAccessor(gltf, sampler.input);
-    const output = readFloatAccessor(gltf, sampler.output);
+    const input = readFloatAccessor(asset, sampler.input);
+    const output = readFloatAccessor(asset, sampler.output);
     const interpolation = normalizeInterpolation(sampler.interpolation);
     const times = Array.from(input.values);
 
@@ -338,6 +508,27 @@ export function getVrmaExportFileName(fileName: string) {
   const baseName = sourceName.replace(/\.vrma\.gltf$/i, "").replace(/\.(vrma|gltf|json)$/i, "");
 
   return `${baseName || "vrm-animation"}.vrma`;
+}
+
+export function exportVrmaToArrayBuffer(document: VrmaDocument) {
+  const gltf = parseGltfJson(exportVrmaToText(document));
+  const sourceBuffer = gltf.buffers?.[0];
+
+  if (!sourceBuffer) {
+    throw new Error("Cannot export VRMA without a glTF buffer.");
+  }
+
+  const binaryChunk = readEmbeddedBuffer(sourceBuffer.uri);
+  const binaryGltf: GltfLike = {
+    ...gltf,
+    buffers: [
+      {
+        byteLength: binaryChunk.byteLength,
+      },
+    ],
+  };
+
+  return createGlb(binaryGltf, binaryChunk);
 }
 
 export function exportVrmaToText(document: VrmaDocument) {

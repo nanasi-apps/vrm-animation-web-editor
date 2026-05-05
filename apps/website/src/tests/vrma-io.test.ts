@@ -6,7 +6,13 @@ import {
   createRotationTrack,
   upsertTrack,
 } from "../domain/vrma/document";
-import { exportVrmaToText, getVrmaExportFileName, importVrmaFromText } from "../domain/vrma/io";
+import {
+  exportVrmaToText,
+  exportVrmaToArrayBuffer,
+  getVrmaExportFileName,
+  importVrmaFromArrayBuffer,
+  importVrmaFromText,
+} from "../domain/vrma/io";
 
 interface ExportedAccessor {
   bufferView: number;
@@ -23,7 +29,7 @@ interface ExportedGltf {
     samplers: Array<{ input: number; output: number }>;
   }>;
   bufferViews: Array<{ buffer: number; byteLength: number; byteOffset?: number }>;
-  buffers: Array<{ uri: string }>;
+  buffers: Array<{ byteLength?: number; uri?: string }>;
 }
 
 function expectExportError(document: Parameters<typeof exportVrmaToText>[0], message: RegExp) {
@@ -48,7 +54,7 @@ function readAccessorValues(gltf: ExportedGltf, accessorIndex: number) {
   }
 
   const buffer = gltf.buffers[bufferView.buffer];
-  const base64 = buffer?.uri.split(",")[1];
+  const base64 = buffer?.uri?.split(",")[1];
 
   if (!base64) {
     throw new Error("Embedded buffer was not found.");
@@ -59,6 +65,48 @@ function readAccessorValues(gltf: ExportedGltf, accessorIndex: number) {
   const view = bytes.buffer.slice(byteOffset, byteOffset + bufferView.byteLength);
 
   return Array.from(new Float32Array(view));
+}
+
+function alignToFourBytes(bytes: Uint8Array, padding: number) {
+  const alignedLength = Math.ceil(bytes.byteLength / 4) * 4;
+  const aligned = new Uint8Array(alignedLength);
+  aligned.set(bytes);
+  aligned.fill(padding, bytes.byteLength);
+  return aligned;
+}
+
+function writeUint32(view: DataView, offset: number, value: number) {
+  view.setUint32(offset, value, true);
+}
+
+function createGlb(json: ExportedGltf, binaryChunk: Uint8Array) {
+  const jsonBytes = alignToFourBytes(new TextEncoder().encode(JSON.stringify(json)), 0x20);
+  const binBytes = alignToFourBytes(binaryChunk, 0);
+  const totalLength = 12 + 8 + jsonBytes.byteLength + 8 + binBytes.byteLength;
+  const glb = new ArrayBuffer(totalLength);
+  const view = new DataView(glb);
+  const output = new Uint8Array(glb);
+  let offset = 0;
+
+  writeUint32(view, offset, 0x46546c67);
+  offset += 4;
+  writeUint32(view, offset, 2);
+  offset += 4;
+  writeUint32(view, offset, totalLength);
+  offset += 4;
+  writeUint32(view, offset, jsonBytes.byteLength);
+  offset += 4;
+  writeUint32(view, offset, 0x4e4f534a);
+  offset += 4;
+  output.set(jsonBytes, offset);
+  offset += jsonBytes.byteLength;
+  writeUint32(view, offset, binBytes.byteLength);
+  offset += 4;
+  writeUint32(view, offset, 0x004e4942);
+  offset += 4;
+  output.set(binBytes, offset);
+
+  return glb;
 }
 
 test("exported vrma gltf round-trips through import", () => {
@@ -76,6 +124,39 @@ test("exported vrma gltf round-trips through import", () => {
     ),
   ).toBe(true);
   expect(imported.tracks.some((track) => track.kind === "lookAtRotation")).toBe(true);
+  expect(imported.activeBones).toContain("hips");
+});
+
+test("binary glb vrma round-trips through import", () => {
+  const exported = exportVrmaToText(createEmptyDocument("binary.vrma"));
+  const gltf = parseExportedGltf(exported);
+  const base64 = gltf.buffers[0]?.uri?.split(",")[1];
+
+  if (!base64) {
+    throw new Error("Embedded buffer was not found.");
+  }
+
+  const binaryChunk = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+  const glbGltf = {
+    ...gltf,
+    buffers: [{ byteLength: binaryChunk.byteLength }],
+  };
+  const imported = importVrmaFromArrayBuffer(createGlb(glbGltf, binaryChunk), "binary.vrma");
+
+  expect(imported.fileName).toBe("binary.vrma");
+  expect(imported.specVersion).toBe("1.0");
+  expect(imported.activeBones).toContain("hips");
+  expect(imported.tracks.some((track) => track.kind === "hipsTranslation")).toBe(true);
+});
+
+test("exported vrma binary starts with glb magic and imports", () => {
+  const exported = exportVrmaToArrayBuffer(createEmptyDocument("export-binary.vrma"));
+  const view = new DataView(exported);
+  const imported = importVrmaFromArrayBuffer(exported, "export-binary.vrma");
+
+  expect(view.getUint32(0, true)).toBe(0x46546c67);
+  expect(view.getUint32(4, true)).toBe(2);
+  expect(imported.fileName).toBe("export-binary.vrma");
   expect(imported.activeBones).toContain("hips");
 });
 
