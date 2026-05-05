@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "stack-template",
+  "name": "vrm-animation-web-editor",
   "main": "apps/backend/src/index.ts",
   "compatibility_date": "2026-04-13",
   "observability": {
