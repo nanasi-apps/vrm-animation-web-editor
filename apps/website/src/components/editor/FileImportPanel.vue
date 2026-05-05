@@ -53,7 +53,7 @@ async function handleAnimationFile(event: Event) {
         </label>
         <label class="import-button">
           <input
-            accept=".gltf,.json"
+            accept=".vrma,.gltf,.json"
             type="file"
             class="hidden-input"
             @change="handleAnimationFile"

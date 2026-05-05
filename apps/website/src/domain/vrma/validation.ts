@@ -1,13 +1,40 @@
 import {
   FORBIDDEN_EXPRESSION_PRESETS,
+  HUMAN_BONE_NAMES,
   PRESET_EXPRESSION_NAMES,
   REQUIRED_HUMAN_BONES,
   SPEC_VERSION,
 } from "./constants";
-import type { Diagnostic, VrmaDocument } from "./types";
+import type { Diagnostic, Vec3, Vec4, VrmaDocument, VrmaTrack } from "./types";
 
 function createDiagnostic(code: string, level: Diagnostic["level"], message: string): Diagnostic {
   return { code, level, message };
+}
+
+const humanBoneNameSet = new Set<string>(HUMAN_BONE_NAMES);
+
+function isFiniteNumber(value: number) {
+  return Number.isFinite(value);
+}
+
+function isFiniteTuple(value: Vec3 | Vec4, size: 3 | 4) {
+  return value.length === size && value.every(isFiniteNumber);
+}
+
+function getTrackLabel(track: VrmaTrack) {
+  if (track.kind === "boneRotation") {
+    return `${track.bone} rotation`;
+  }
+
+  if (track.kind === "hipsTranslation") {
+    return "hips translation";
+  }
+
+  if (track.kind === "expression") {
+    return `${track.expressionName} expression`;
+  }
+
+  return "lookAt rotation";
 }
 
 export function validateDocument(document: VrmaDocument): Diagnostic[] {
@@ -27,6 +54,14 @@ export function validateDocument(document: VrmaDocument): Diagnostic[] {
     if (!document.activeBones.includes(bone)) {
       diagnostics.push(
         createDiagnostic("required-bone", "error", `Required humanoid bone "${bone}" is missing.`),
+      );
+    }
+  }
+
+  for (const bone of document.activeBones) {
+    if (!humanBoneNameSet.has(bone)) {
+      diagnostics.push(
+        createDiagnostic("unsupported-bone", "error", `Unsupported humanoid bone "${bone}".`),
       );
     }
   }
@@ -58,6 +93,54 @@ export function validateDocument(document: VrmaDocument): Diagnostic[] {
   }
 
   for (const track of document.tracks) {
+    const trackLabel = getTrackLabel(track);
+
+    if (track.keyframes.length === 0) {
+      diagnostics.push(
+        createDiagnostic(
+          "empty-track",
+          "error",
+          `${trackLabel} track must have at least one keyframe.`,
+        ),
+      );
+    }
+
+    for (const keyframe of track.keyframes) {
+      if (!isFiniteNumber(keyframe.time)) {
+        diagnostics.push(
+          createDiagnostic("invalid-time", "error", `${trackLabel} track has a non-finite time.`),
+        );
+      }
+    }
+
+    if (track.kind === "boneRotation") {
+      for (const keyframe of track.keyframes) {
+        if (!isFiniteTuple(keyframe.value, 4)) {
+          diagnostics.push(
+            createDiagnostic(
+              "invalid-rotation",
+              "error",
+              `${trackLabel} track has an invalid VEC4 keyframe value.`,
+            ),
+          );
+        }
+      }
+    }
+
+    if (track.kind === "hipsTranslation") {
+      for (const keyframe of track.keyframes) {
+        if (!isFiniteTuple(keyframe.value, 3)) {
+          diagnostics.push(
+            createDiagnostic(
+              "invalid-translation",
+              "error",
+              `${trackLabel} track has an invalid VEC3 keyframe value.`,
+            ),
+          );
+        }
+      }
+    }
+
     if (track.kind === "expression") {
       if (track.preset && !PRESET_EXPRESSION_NAMES.includes(track.expressionName as never)) {
         diagnostics.push(
@@ -79,13 +162,58 @@ export function validateDocument(document: VrmaDocument): Diagnostic[] {
         );
       }
 
+      if (!track.preset && PRESET_EXPRESSION_NAMES.includes(track.expressionName as never)) {
+        diagnostics.push(
+          createDiagnostic(
+            "custom-expression-name",
+            "error",
+            `Custom expression "${track.expressionName}" must not use a VRM preset expression name.`,
+          ),
+        );
+      }
+
       for (const keyframe of track.keyframes) {
+        if (!isFiniteNumber(keyframe.value)) {
+          diagnostics.push(
+            createDiagnostic(
+              "invalid-expression-value",
+              "error",
+              `${trackLabel} track has a non-finite keyframe value.`,
+            ),
+          );
+          continue;
+        }
+
         if (keyframe.value < 0 || keyframe.value > 1) {
           diagnostics.push(
             createDiagnostic(
               "expression-range",
               "warning",
               `Expression track "${track.expressionName}" has a key outside [0, 1] at ${keyframe.time.toFixed(2)}s; export will clamp it.`,
+            ),
+          );
+        }
+      }
+    }
+
+    if (track.kind === "lookAtRotation") {
+      if (!isFiniteTuple(track.offsetFromHeadBone, 3)) {
+        diagnostics.push(
+          createDiagnostic(
+            "invalid-lookat-offset",
+            "error",
+            "LookAt offsetFromHeadBone must be a finite VEC3.",
+          ),
+        );
+      }
+
+      for (const keyframe of track.keyframes) {
+        if (!isFiniteTuple(keyframe.value, 4)) {
+          diagnostics.push(
+            createDiagnostic(
+              "invalid-lookat-rotation",
+              "error",
+              `${trackLabel} track has an invalid VEC4 keyframe value.`,
             ),
           );
         }

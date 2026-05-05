@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { getVrmaExportFileName } from "../../domain/vrma/io";
 import { useAnimationEditorStore } from "../../stores/animation-editor";
 
 const editorStore = useAnimationEditorStore();
@@ -12,10 +13,10 @@ function download() {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = editorStore.document.fileName.endsWith(".gltf")
-    ? editorStore.document.fileName
-    : "vrm-animation.gltf";
+  anchor.download = getVrmaExportFileName(editorStore.document.fileName);
+  document.body.append(anchor);
   anchor.click();
+  anchor.remove();
   URL.revokeObjectURL(url);
 }
 </script>
@@ -35,13 +36,13 @@ function download() {
         show-icon
         :title="
           canExport
-            ? 'The document is ready to export as embedded JSON glTF.'
+            ? 'The document is ready to export as VRMA.'
             : 'Resolve blocking validation errors before export.'
         "
         :type="canExport ? 'success' : 'error'"
       />
 
-      <el-button :disabled="!canExport" type="primary" @click="download">Download .gltf</el-button>
+      <el-button :disabled="!canExport" type="primary" @click="download">Download .vrma</el-button>
 
       <pre class="export-preview"
         >{{ editorStore.exportText.slice(0, 1200)

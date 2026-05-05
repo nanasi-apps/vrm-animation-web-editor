@@ -5,6 +5,7 @@ import {
   HUMAN_BONE_NAMES,
   PRESET_EXPRESSION_NAMES,
 } from "../../domain/vrma/constants";
+import { getVrmaExportFileName } from "../../domain/vrma/io";
 import { useAnimationEditorStore } from "../../stores/animation-editor";
 
 const editorStore = useAnimationEditorStore();
@@ -83,6 +84,29 @@ const availablePresetExpressions = computed(() =>
       ),
   ),
 );
+const canExport = computed(
+  () => !editorStore.diagnostics.some((diagnostic) => diagnostic.level === "error"),
+);
+
+function getExportFileName() {
+  return getVrmaExportFileName(editorStore.document.fileName);
+}
+
+function downloadVrma() {
+  if (!canExport.value) {
+    return;
+  }
+
+  const blob = new Blob([editorStore.exportText], { type: "model/gltf+json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = getExportFileName();
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 
 function positionPercent(time: number) {
   if (editorStore.document.duration <= 0) {
@@ -287,6 +311,9 @@ onBeforeUnmount(() => {
         <el-button size="small" @click.stop="addTrackMenuOpen = !addTrackMenuOpen"
           >Add Track</el-button
         >
+        <el-button type="success" size="small" :disabled="!canExport" @click="downloadVrma">
+          Export VRMA
+        </el-button>
       </div>
     </div>
 

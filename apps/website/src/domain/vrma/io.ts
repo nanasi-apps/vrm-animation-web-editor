@@ -13,11 +13,14 @@ import {
   inferDuration,
 } from "./document";
 import type { HumanBoneName, Interpolation, Vec3, Vec4, VrmaDocument, VrmaTrack } from "./types";
+import { validateDocument } from "./validation";
 
 interface AccessorLike {
   bufferView: number;
   componentType: number;
   count: number;
+  max?: number[];
+  min?: number[];
   type: "SCALAR" | "VEC3" | "VEC4";
 }
 
@@ -290,7 +293,56 @@ interface BuiltAccessor {
   bufferViewIndex: number;
 }
 
+function normalizeExportKeyframes<TValue>(keyframes: Array<{ time: number; value: TValue }>) {
+  const normalized = keyframes
+    .map((keyframe) => ({
+      time: Math.max(0, Number.isFinite(keyframe.time) ? keyframe.time : 0),
+      value: keyframe.value,
+    }))
+    .sort((left, right) => left.time - right.time);
+  const unique: Array<{ time: number; value: TValue }> = [];
+
+  for (const keyframe of normalized) {
+    const lastIndex = unique.length - 1;
+    const last = unique[lastIndex];
+
+    if (last?.time === keyframe.time) {
+      unique[lastIndex] = keyframe;
+      continue;
+    }
+
+    unique.push(keyframe);
+  }
+
+  return unique;
+}
+
+function getComponentCount(type: AccessorLike["type"]) {
+  if (type === "SCALAR") {
+    return 1;
+  }
+
+  return type === "VEC3" ? 3 : 4;
+}
+
+function assertExportableDocument(document: VrmaDocument) {
+  const errors = validateDocument(document).filter((diagnostic) => diagnostic.level === "error");
+
+  if (errors.length > 0) {
+    throw new Error(`Cannot export invalid VRMA document: ${errors[0]!.message}`);
+  }
+}
+
+export function getVrmaExportFileName(fileName: string) {
+  const sourceName = fileName.trim() || "vrm-animation";
+  const baseName = sourceName.replace(/\.vrma\.gltf$/i, "").replace(/\.(vrma|gltf|json)$/i, "");
+
+  return `${baseName || "vrm-animation"}.vrma`;
+}
+
 export function exportVrmaToText(document: VrmaDocument) {
+  assertExportableDocument(document);
+
   const bufferBytes: number[] = [];
   const accessors: AccessorLike[] = [];
   const bufferViews: Array<{ buffer: number; byteLength: number; byteOffset: number }> = [];
@@ -299,7 +351,22 @@ export function exportVrmaToText(document: VrmaDocument) {
     flatValues: number[],
     count: number,
     type: AccessorLike["type"],
+    bounds?: { max: number[]; min: number[] },
   ): BuiltAccessor {
+    const componentCount = getComponentCount(type);
+
+    if (count < 1) {
+      throw new Error("Cannot export an accessor with zero elements.");
+    }
+
+    if (flatValues.length !== count * componentCount) {
+      throw new Error("Cannot export an accessor with mismatched element count.");
+    }
+
+    if (!flatValues.every(Number.isFinite)) {
+      throw new Error("Cannot export an accessor with non-finite values.");
+    }
+
     const byteOffset = bufferBytes.length;
     const bytes = createFloatArray(flatValues);
 
@@ -320,6 +387,7 @@ export function exportVrmaToText(document: VrmaDocument) {
       bufferView: bufferViewIndex,
       componentType: 5126,
       count,
+      ...bounds,
       type,
     });
 
@@ -327,6 +395,13 @@ export function exportVrmaToText(document: VrmaDocument) {
       accessorIndex: accessors.length - 1,
       bufferViewIndex,
     };
+  }
+
+  function appendInputAccessor(times: number[]) {
+    return appendAccessor(times, times.length, "SCALAR", {
+      max: [times[times.length - 1] ?? 0],
+      min: [times[0] ?? 0],
+    }).accessorIndex;
   }
 
   const nodes: Array<{ children?: number[]; name: string; rotation?: Vec4; translation?: Vec3 }> =
@@ -396,9 +471,6 @@ export function exportVrmaToText(document: VrmaDocument) {
   };
 
   for (const track of document.tracks) {
-    const times = track.keyframes.map((keyframe) => keyframe.time);
-    const inputAccessor = appendAccessor(times, times.length, "SCALAR").accessorIndex;
-
     if (track.kind === "boneRotation") {
       const nodeIndex = boneNodeIndices.get(track.bone);
 
@@ -406,9 +478,12 @@ export function exportVrmaToText(document: VrmaDocument) {
         continue;
       }
 
+      const keyframes = normalizeExportKeyframes(track.keyframes);
+      const times = keyframes.map((keyframe) => keyframe.time);
+      const inputAccessor = appendInputAccessor(times);
       const outputAccessor = appendAccessor(
-        track.keyframes.flatMap((keyframe) => keyframe.value),
-        track.keyframes.length,
+        keyframes.flatMap((keyframe) => keyframe.value),
+        keyframes.length,
         "VEC4",
       ).accessorIndex;
       animation.samplers.push({
@@ -430,9 +505,12 @@ export function exportVrmaToText(document: VrmaDocument) {
         continue;
       }
 
+      const keyframes = normalizeExportKeyframes(track.keyframes);
+      const times = keyframes.map((keyframe) => keyframe.time);
+      const inputAccessor = appendInputAccessor(times);
       const outputAccessor = appendAccessor(
-        track.keyframes.flatMap((keyframe) => keyframe.value),
-        track.keyframes.length,
+        keyframes.flatMap((keyframe) => keyframe.value),
+        keyframes.length,
         "VEC3",
       ).accessorIndex;
       animation.samplers.push({
@@ -455,9 +533,12 @@ export function exportVrmaToText(document: VrmaDocument) {
         continue;
       }
 
+      const keyframes = normalizeExportKeyframes(track.keyframes);
+      const times = keyframes.map((keyframe) => keyframe.time);
+      const inputAccessor = appendInputAccessor(times);
       const outputAccessor = appendAccessor(
-        track.keyframes.flatMap((keyframe) => [Math.min(1, Math.max(0, keyframe.value)), 0, 0]),
-        track.keyframes.length,
+        keyframes.flatMap((keyframe) => [Math.min(1, Math.max(0, keyframe.value)), 0, 0]),
+        keyframes.length,
         "VEC3",
       ).accessorIndex;
       animation.samplers.push({
@@ -476,9 +557,12 @@ export function exportVrmaToText(document: VrmaDocument) {
       continue;
     }
 
+    const keyframes = normalizeExportKeyframes(track.keyframes);
+    const times = keyframes.map((keyframe) => keyframe.time);
+    const inputAccessor = appendInputAccessor(times);
     const outputAccessor = appendAccessor(
-      track.keyframes.flatMap((keyframe) => keyframe.value),
-      track.keyframes.length,
+      keyframes.flatMap((keyframe) => keyframe.value),
+      keyframes.length,
       "VEC4",
     ).accessorIndex;
     animation.samplers.push({
